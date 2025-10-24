@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>钉钉 NFC 读取示例</title>
+  <title>钉钉 NFC 读取（调试版）</title>
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -52,14 +52,17 @@
       font-family: monospace;
       white-space: pre-wrap;
       border-radius: 4px;
+      max-height: 200px;
+      overflow-y: auto;
     }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1>钉钉 NFC 读取</h1>
+    <h1>钉钉 NFC 读取（调试版）</h1>
     <div id="status">正在初始化钉钉环境...</div>
     <button id="readNfcBtn" disabled>读取 NFC 标签</button>
+    <!-- 🔵 页面日志区域：用于显示 console.log 内容 -->
     <div class="log" id="log"></div>
   </div>
 
@@ -68,16 +71,24 @@
 
   <script>
     // ========== 配置区 ==========
-    // 替换成你的阿里云函数公网调用地址！
-    const BACKEND_URL = 'https://get-config-nltlezcizh.cn-hangzhou.fcapp.run/'; // ←←← 请务必修改这里！
+    // ⚠️ 请务必替换成你的阿里云函数公网地址！
+    const BACKEND_URL = 'https://get-config-nltlezcizh.cn-hangzhou.fcapp.run/'; // ←←← 修改这里！
 
     // ========== 工具函数 ==========
+    /**
+     * 🔵 调试日志函数：同时输出到页面和浏览器 console
+     */
     function log(msg) {
       const logEl = document.getElementById('log');
-      logEl.textContent += `[${new Date().toLocaleTimeString()}] ${msg}\n`;
+      const line = `[${new Date().toLocaleTimeString()}] ${msg}`;
+      logEl.textContent += line + '\n';
       logEl.scrollTop = logEl.scrollHeight;
+      console.log(line); // 🔵 输出到浏览器开发者工具控制台
     }
 
+    /**
+     * 更新页面状态文字（非强制弹窗）
+     */
     function updateStatus(msg, isError = false) {
       const statusEl = document.getElementById('status');
       statusEl.textContent = msg;
@@ -87,21 +98,98 @@
     // ========== 主逻辑 ==========
     (async () => {
       try {
-        // 1. 获取当前页面 URL（用于签名）
+        // 🔵 调试日志
+        log('🚀 开始初始化流程');
+
         const currentUrl = window.location.href.split('#')[0];
         const encodedUrl = encodeURIComponent(currentUrl);
-        log(`当前页面 URL: ${currentUrl}`);
+        // 🔵 调试日志
+        log(`🔗 当前页面 URL: ${currentUrl}`);
 
-        // 2. 调用后端获取钉钉配置
-        updateStatus('正在请求签名配置...');
+        updateStatus('📡 正在请求后端签名配置...');
+        // 🔵 调试日志
+        log(`📤 请求地址: ${BACKEND_URL}?url=${encodedUrl}`);
+
         const response = await fetch(`${BACKEND_URL}?url=${encodedUrl}`);
+        // 🔵 调试日志
+        log(`📥 后端响应状态: ${response.status} ${response.statusText}`);
+
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
+
         const config = await response.json();
+        // 🔵 调试日志
+        log('✅ 后端返回原始数据:', JSON.stringify(config, null, 2));
 
         if (config.error) {
-          throw new Error(config.error);
+          throw new Error('后端返回错误: ' + config.error);
         }
 
-        log('✅ 后端返
+        // 🟢 强制显示成功信息（弹窗）
+        alert('✅ 后端配置获取成功！\n即将初始化钉钉...');
+
+        // 🔵 调试日志
+        log('⚙️ 调用 dd.config() 初始化钉钉...');
+        dd.config({
+          agentId: config.agentId,
+          corpId: config.corpId,
+          timeStamp: config.timeStamp,
+          nonceStr: config.nonceStr,
+          signature: config.signature,
+          jsApiList: ['device.nfc.nfcRead']
+        });
+        // 🔵 调试日志
+        log('✅ dd.config() 已调用');
+
+        dd.ready(() => {
+          // 🔵 调试日志
+          log('✅ dd.ready() 触发');
+          updateStatus('✅ 钉钉环境已就绪，可读取 NFC');
+          document.getElementById('readNfcBtn').disabled = false;
+          // 🟢 强制显示成功信息（弹窗）
+          alert('🎉 钉钉初始化成功！现在可以读取 NFC。');
+        });
+
+        dd.error((err) => {
+          const errMsg = JSON.stringify(err);
+          // 🔵 调试日志
+          log(`❌ dd.error: ${errMsg}`);
+          updateStatus(`❌ 钉钉初始化失败: ${errMsg}`, true);
+          // 🟢 强制显示错误信息（弹窗）
+          alert('❌ 钉钉初始化失败！\n请查看日志或联系管理员。\n错误: ' + errMsg);
+        });
+
+      } catch (err) {
+        const msg = `💥 初始化流程失败: ${err.message}`;
+        // 🔵 调试日志
+        log(msg);
+        updateStatus(msg, true);
+        // 🟢 强制显示错误信息（弹窗）
+        alert('💥 初始化失败！\n' + err.message);
+      }
+    })();
+
+    // ========== NFC 读取按钮 ==========
+    document.getElementById('readNfcBtn').addEventListener('click', () => {
+      // 🔵 调试日志
+      log('📲 用户点击“读取 NFC 标签”');
+      dd.device.nfc.nfcRead({
+        onSuccess: function(data) {
+          // 🔵 调试日志
+          log('✅ NFC 读取成功:', JSON.stringify(data, null, 2));
+          // 🟢 强制显示成功信息（弹窗）
+          alert('✅ NFC 读取成功！\n内容: ' + (data.message || '无数据'));
+        },
+        onFail: function(err) {
+          const errMsg = JSON.stringify(err);
+          // 🔵 调试日志
+          log(`❌ NFC 读取失败: ${errMsg}`);
+          // 🟢 强制显示错误信息（弹窗）
+          alert('❌ NFC 读取失败！\n错误: ' + errMsg);
+        }
+      });
+    });
+  </script>
+</body>
+</html>
