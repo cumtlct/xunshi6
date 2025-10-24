@@ -1,71 +1,107 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
-    <meta charset="UTF-8">
-    <title>NFC读取并写入多维表</title>
-    <!-- 引入钉钉JSAPI -->
-    <script src="//g.alicdn.com/dingding/open-develop/1.6.9/dingtalk.js"></script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>钉钉 NFC 读取示例</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      padding: 20px;
+      background-color: #f5f5f5;
+      color: #333;
+    }
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      background: white;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    h1 {
+      text-align: center;
+      color: #1890ff;
+    }
+    #status {
+      margin: 20px 0;
+      padding: 12px;
+      background: #f9f9f9;
+      border-left: 4px solid #1890ff;
+      font-size: 16px;
+    }
+    button {
+      display: block;
+      width: 100%;
+      padding: 14px;
+      font-size: 18px;
+      background: #1890ff;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    .log {
+      margin-top: 20px;
+      padding: 10px;
+      background: #f0f0f0;
+      font-family: monospace;
+      white-space: pre-wrap;
+      border-radius: 4px;
+    }
+  </style>
 </head>
 <body>
-    <button onclick="readNFC()">读取NFC芯片</button>
+  <div class="container">
+    <h1>钉钉 NFC 读取</h1>
+    <div id="status">正在初始化钉钉环境...</div>
+    <button id="readNfcBtn" disabled>读取 NFC 标签</button>
+    <div class="log" id="log"></div>
+  </div>
 
-    <script>
-        // 配置钉钉JSAPI权限
-        dd.config({
-            agentId: "你的企业应用AgentId", // 替换为企业应用AgentId
-            corpId: "你的企业CorpId",       // 替换为企业CorpId
-            timeStamp: "",                  // 时间戳
-            nonceStr: "",                   // 随机字符串
-            signature: "",                  // 签名（需后端生成）
-            jsApiList: ["device.nfc.nfcRead", "biz.dataV.multiTable.create"]
-        });
+  <!-- 钉钉 JSAPI SDK -->
+  <script src="https://g.alicdn.com/dingding/open-develop/4.9.0/dingtalk.js"></script>
 
-        function readNFC() {
-            dd.ready(function () {
-                // 调用NFC读取
-                dd.device.nfc.nfcRead({
-                    onSuccess: function (data) {
-                        const nfcContent = data.content; // 读取到的NFC数据（如 "编号:123, 名字:张三"）
-                        const [id, name] = parseNFCData(nfcContent); // 解析编号和名字
-                        const now = new Date();
-                        const date = now.toISOString().split('T')[0]; // 日期（如 2025-10-13）
-                        const time = now.toLocaleTimeString();         // 时间（如 19:03:08）
+  <script>
+    // ========== 配置区 ==========
+    // 替换成你的阿里云函数公网调用地址！
+    const BACKEND_URL = 'https://get-config-nltlezcizh.cn-hangzhou.fcapp.run'; // ←←← 请务必修改这里！
 
-                        // 写入多维表
-                        writeMultiTable(id, name, date, time);
-                    },
-                    onFail: function (err) {
-                        alert("NFC读取失败: " + JSON.stringify(err));
-                    }
-                });
-            });
+    // ========== 工具函数 ==========
+    function log(msg) {
+      const logEl = document.getElementById('log');
+      logEl.textContent += `[${new Date().toLocaleTimeString()}] ${msg}\n`;
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    function updateStatus(msg, isError = false) {
+      const statusEl = document.getElementById('status');
+      statusEl.textContent = msg;
+      statusEl.style.borderLeftColor = isError ? '#ff4d4f' : '#1890ff';
+    }
+
+    // ========== 主逻辑 ==========
+    (async () => {
+      try {
+        // 1. 获取当前页面 URL（用于签名）
+        const currentUrl = window.location.href.split('#')[0];
+        const encodedUrl = encodeURIComponent(currentUrl);
+        log(`当前页面 URL: ${currentUrl}`);
+
+        // 2. 调用后端获取钉钉配置
+        updateStatus('正在请求签名配置...');
+        const response = await fetch(`${BACKEND_URL}?url=${encodedUrl}`);
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        const config = await response.json();
+
+        if (config.error) {
+          throw new Error(config.error);
         }
 
-        function parseNFCData(content) {
-            // 根据实际NFC数据格式解析编号和名字
-            const parts = content.split(",");
-            const id = parts[0].match(/编号:(\d+)/)[1];
-            const name = parts[1].match(/名字:(\S+)/)[1];
-            return [id, name];
-        }
-
-        function writeMultiTable(id, name, date, time) {
-            dd.biz.dataV.multiTable.create({
-                tableId: "你的多维表ID", // 替换为多维表ID
-                record: {
-                    "编号": id,
-                    "名字": name,
-                    "日期": date,
-                    "时间": time
-                },
-                onSuccess: function () {
-                    alert("数据写入成功！");
-                },
-                onFail: function (err) {
-                    alert("写入失败: " + JSON.stringify(err));
-                }
-            });
-        }
-    </script>
-</body>
-</html>
+        log('✅ 后端返
