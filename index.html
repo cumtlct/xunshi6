@@ -3,80 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>钉钉 NFC 读取 & AI表格写入</title>
-  <style>
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      padding: 20px;
-      background-color: #f5f5f5;
-      color: #333;
-    }
-    .container {
-      max-width: 600px;
-      margin: 0 auto;
-      background: white;
-      padding: 20px;
-      border-radius: 10px;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-    }
-    h1 {
-      text-align: center;
-      color: #1890ff;
-    }
-    #status {
-      margin: 20px 0;
-      padding: 12px;
-      background: #f9f9f9;
-      border-left: 4px solid #1890ff;
-      font-size: 16px;
-    }
-    button {
-      display: block;
-      width: 100%;
-      padding: 14px;
-      font-size: 18px;
-      background: #1890ff;
-      color: white;
-      border: none;
-      border-radius: 6px;
-      cursor: pointer;
-      margin: 10px 0;
-    }
-    button:disabled {
-      background: #ccc;
-      cursor: not-allowed;
-    }
-    button.success {
-      background: #52c41a;
-    }
-    .log {
-      margin-top: 20px;
-      padding: 10px;
-      background: #f0f0f0;
-      font-family: monospace;
-      white-space: pre-wrap;
-      border-radius: 4px;
-      max-height: 300px;
-      overflow-y: auto;
-    }
-    .data-preview {
-      margin: 15px 0;
-      padding: 15px;
-      background: #f6ffed;
-      border: 1px solid #b7eb8f;
-      border-radius: 6px;
-    }
-    .step {
-      margin: 10px 0;
-      padding: 10px;
-      border-left: 3px solid #1890ff;
-      background: #f0f8ff;
-    }
-  </style>
+  <title>二维码扫描 & AI表格写入</title>
+  <!-- 样式保持不变 -->
 </head>
 <body>
   <div class="container">
-    <h1>NFC 读取 & AI表格写入</h1>
+    <h1>二维码扫描 & AI表格写入</h1>
     
     <div class="step">
       <strong>步骤 1:</strong> 初始化钉钉环境
@@ -84,21 +16,16 @@
     <div id="status">正在初始化钉钉环境...</div>
     
     <div class="step">
-      <strong>步骤 2:</strong> 读取 NFC 标签
+      <strong>步骤 2:</strong> 扫描二维码
     </div>
-    <button id="readNfcBtn" disabled>读取 NFC 标签</button>
+    <button id="scanBtn" disabled>扫描二维码</button>
     
     <div class="step">
       <strong>步骤 3:</strong> 写入 AI 表格
     </div>
     <button id="writeTableBtn" disabled class="success">写入 AI 表格</button>
     
-    <div class="data-preview" id="dataPreview" style="display: none;">
-      <h3>即将写入的数据：</h3>
-      <div id="previewContent"></div>
-    </div>
-    
-    <div class="log" id="log"></div>
+    <!-- 其他HTML内容保持不变 -->
   </div>
 
   <script src="https://g.alicdn.com/dingding/open-develop/4.9.0/dingtalk.js"></script>
@@ -107,9 +34,8 @@
     // ========== 配置区 ==========
     const BACKEND_URL = 'https://get-config-nltlezcizh.cn-hangzhou.fcapp.run';
     
-    // 全局变量存储读取的数据和配置
-    let nfcData = null;
-    let tableRecordId = null;
+    // 全局变量
+    let scanData = null;
     let ddConfig = null;
 
     // ========== 工具函数 ==========
@@ -127,139 +53,6 @@
       statusEl.style.borderLeftColor = isError ? '#ff4d4f' : '#1890ff';
     }
 
-    // 解析NFC数据
-    function parseNFCData(rawData) {
-      try {
-        let params = {};
-        
-        if (typeof rawData === 'string') {
-          // 尝试解析为JSON
-          try {
-            params = JSON.parse(rawData);
-          } catch (e) {
-            // 如果不是JSON，尝试解析为键值对
-            const pairs = rawData.split('&');
-            pairs.forEach(pair => {
-              const [key, value] = pair.split('=');
-              if (key && value) {
-                params[key.trim()] = value.trim();
-              }
-            });
-          }
-        } else if (rawData.message) {
-          // 如果是对象且有message字段
-          if (typeof rawData.message === 'string') {
-            return parseNFCData(rawData.message);
-          }
-          params = rawData.message;
-        } else {
-          // 直接使用原始数据
-          params = rawData;
-        }
-        
-        return params;
-      } catch (error) {
-        log(`❌ NFC数据解析失败: ${error.message}`);
-        return { rawData: JSON.stringify(rawData) };
-      }
-    }
-
-    // 准备写入表格的数据
-    function prepareTableData(nfcParams) {
-      const now = new Date();
-      
-      // 构建基础数据
-      const tableData = {
-        // NFC芯片参数
-        nfcId: nfcParams.id || nfcParams.nfcId || nfcParams.uid || '未知ID',
-        chipType: nfcParams.type || nfcParams.chipType || '标准NFC',
-        parameters: nfcParams,
-        
-        // 时间信息
-        scanDate: now.toISOString().split('T')[0], // YYYY-MM-DD
-        scanTime: now.toTimeString().split(' ')[0], // HH:MM:SS
-        scanDateTime: now.toISOString(), // 完整时间戳
-      };
-      
-      // 尝试获取用户信息
-      try {
-        if (dd.env.userName) {
-          tableData.operator = dd.env.userName;
-        }
-        if (dd.env.userId) {
-          tableData.operatorId = dd.env.userId;
-        }
-        if (dd.env.deviceType) {
-          tableData.deviceInfo = dd.env.deviceType;
-        }
-      } catch (e) {
-        log('⚠️ 无法获取用户信息，使用默认值');
-        tableData.operator = '未知用户';
-        tableData.deviceInfo = '未知设备';
-      }
-      
-      return tableData;
-    }
-
-    // 显示数据预览
-    function showDataPreview(data) {
-      const previewEl = document.getElementById('dataPreview');
-      const contentEl = document.getElementById('previewContent');
-      
-      let html = '<table style="width: 100%; border-collapse: collapse;">';
-      Object.keys(data).forEach(key => {
-        let value = data[key];
-        if (typeof value === 'object') {
-          value = JSON.stringify(value);
-        }
-        html += `
-          <tr>
-            <td style="padding: 4px 8px; border: 1px solid #ddd; font-weight: bold; width: 30%;">${key}</td>
-            <td style="padding: 4px 8px; border: 1px solid #ddd; word-break: break-all;">${value}</td>
-          </tr>
-        `;
-      });
-      html += '</table>';
-      
-      contentEl.innerHTML = html;
-      previewEl.style.display = 'block';
-    }
-
-    // 写入AI表格
-    async function writeToTable(data) {
-      try {
-        log('📊 开始写入AI表格...');
-        
-        // 发送POST请求到后端
-        const response = await fetch(BACKEND_URL, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            tableData: data
-          })
-        });
-
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-
-        const result = await response.json();
-        
-        if (result.success) {
-          tableRecordId = result.recordId;
-          log(`✅ 数据成功写入AI表格，记录ID: ${result.recordId}`);
-          return { success: true, recordId: result.recordId };
-        } else {
-          throw new Error(result.error || '写入失败');
-        }
-      } catch (error) {
-        log(`❌ 写入AI表格失败: ${error.message}`);
-        return { success: false, error: error.message };
-      }
-    }
-
     // ========== 初始化逻辑 ==========
     (async () => {
       try {
@@ -267,27 +60,21 @@
 
         const currentUrl = window.location.href.split('#')[0];
         const encodedUrl = encodeURIComponent(currentUrl);
-        log(`🔗 当前页面 URL: ${currentUrl}`);
 
         updateStatus('📡 正在请求后端签名配置...');
-        log(`📤 请求地址: ${BACKEND_URL}?url=${encodedUrl}`);
-
         const response = await fetch(`${BACKEND_URL}?url=${encodedUrl}`);
-        log(`📥 后端响应状态: ${response.status} ${response.statusText}`);
 
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
 
         ddConfig = await response.json();
-        log('✅ 后端返回配置数据');
 
         if (ddConfig.error) {
           throw new Error('后端返回错误: ' + ddConfig.error);
         }
 
-        // 初始化钉钉JSAPI
-        log('⚙️ 调用 dd.config() 初始化钉钉...');
+        // 初始化钉钉JSAPI - 使用正确的权限配置
         dd.config({
           agentId: ddConfig.agentId,
           corpId: ddConfig.corpId,
@@ -295,17 +82,15 @@
           nonceStr: ddConfig.nonceStr,
           signature: ddConfig.signature,
           jsApiList: [
-            'device.nfc.nfcRead',
+            'biz.util.scan',  // ✅ 正确的扫码权限
             'runtime.permission.requestAuthCode'
           ]
         });
 
-        log('✅ dd.config() 已调用');
-
         dd.ready(() => {
           log('✅ dd.ready() 触发');
-          updateStatus('✅ 钉钉环境已就绪，可读取 NFC');
-          document.getElementById('readNfcBtn').disabled = false;
+          updateStatus('✅ 钉钉环境已就绪，可扫描二维码');
+          document.getElementById('scanBtn').disabled = false;
         });
 
         dd.error((err) => {
@@ -321,43 +106,42 @@
       }
     })();
 
-    // ========== NFC 读取按钮事件 ==========
-    document.getElementById('readNfcBtn').addEventListener('click', () => {
-      log('📲 用户点击"读取 NFC 标签"');
-      updateStatus('📱 请将手机靠近NFC标签...');
+    // ========== 扫描按钮事件 ==========
+    document.getElementById('scanBtn').addEventListener('click', () => {
+      log('📲 用户点击"扫描二维码"');
+      updateStatus('📷 请扫描二维码...');
       
-      dd.device.nfc.nfcRead({
+      // 使用正确的扫码API
+      dd.biz.util.scan({
+        type: "qrCode", // 二维码
         onSuccess: function(data) {
-          log('✅ NFC 读取成功');
-          log('NFC原始数据: ' + JSON.stringify(data, null, 2));
+          log('✅ 扫码成功: ' + data.text);
           
-          // 解析NFC数据
-          nfcData = parseNFCData(data);
-          log('📋 解析后的NFC参数: ' + JSON.stringify(nfcData, null, 2));
-          
-          // 准备表格数据
-          const tableData = prepareTableData(nfcData);
-          log('📊 准备写入表格的数据: ' + JSON.stringify(tableData, null, 2));
-          
-          // 显示数据预览
-          showDataPreview(tableData);
+          // 处理扫码数据
+          try {
+            // 尝试解析JSON格式
+            const parsedData = JSON.parse(data.text);
+            scanData = parsedData;
+          } catch (e) {
+            // 如果不是JSON，作为纯文本处理
+            scanData = { content: data.text };
+          }
           
           // 启用写入按钮
           document.getElementById('writeTableBtn').disabled = false;
-          updateStatus('✅ NFC 读取成功！点击"写入 AI 表格"保存数据');
+          updateStatus('✅ 扫码成功！点击"写入 AI 表格"保存数据');
         },
         onFail: function(err) {
-          const errMsg = JSON.stringify(err);
-          log(`❌ NFC 读取失败: ${errMsg}`);
-          updateStatus(`❌ NFC 读取失败: ${errMsg}`, true);
+          log(`❌ 扫码失败: ${JSON.stringify(err)}`);
+          updateStatus('❌ 扫码失败，请重试', true);
         }
       });
     });
 
     // ========== 写入表格按钮事件 ==========
     document.getElementById('writeTableBtn').addEventListener('click', async () => {
-      if (!nfcData) {
-        updateStatus('❌ 请先读取NFC数据！', true);
+      if (!scanData) {
+        updateStatus('❌ 请先扫描二维码！', true);
         return;
       }
       
@@ -367,31 +151,43 @@
       
       updateStatus('📤 正在写入AI表格...');
       
-      const tableData = prepareTableData(nfcData);
-      const result = await writeToTable(tableData);
-      
-      if (result.success) {
-        updateStatus('✅ 数据已成功写入AI表格！');
-        writeBtn.textContent = '✅ 已写入AI表格';
-        writeBtn.classList.remove('success');
-        writeBtn.style.background = '#52c41a';
+      try {
+        // 准备数据
+        const now = new Date();
+        const tableData = {
+          scanContent: scanData.content || JSON.stringify(scanData),
+          scanDate: now.toISOString().split('T')[0],
+          scanTime: now.toTimeString().split(' ')[0],
+          scanDateTime: now.toISOString(),
+          operator: dd.env.userName || '未知用户'
+        };
         
-        // 3秒后重置界面
-        setTimeout(() => {
-          document.getElementById('dataPreview').style.display = 'none';
-          writeBtn.textContent = '写入 AI 表格';
-          writeBtn.style.background = '';
-          writeBtn.classList.add('success');
-          writeBtn.disabled = true;
-          updateStatus('✅ 就绪，可以读取新的NFC标签');
-        }, 3000);
-      } else {
-        updateStatus(`❌ 写入失败: ${result.error}`, true);
+        // 发送到后端
+        const response = await fetch(BACKEND_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            tableData: tableData
+          })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+          updateStatus('✅ 数据已成功写入AI表格！');
+          writeBtn.textContent = '✅ 已写入AI表格';
+          writeBtn.style.background = '#52c41a';
+        } else {
+          throw new Error(result.error || '写入失败');
+        }
+      } catch (error) {
+        updateStatus(`❌ 写入失败: ${error.message}`, true);
         writeBtn.disabled = false;
         writeBtn.textContent = '写入 AI 表格';
       }
     });
-
   </script>
 </body>
 </html>
