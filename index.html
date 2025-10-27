@@ -10,6 +10,7 @@
       padding: 20px;
       background-color: #f5f5f5;
       color: #333;
+      line-height: 1.5;
     }
     .container {
       max-width: 600px;
@@ -22,13 +23,22 @@
     h1 {
       text-align: center;
       color: #1890ff;
+      margin-bottom: 20px;
     }
-    #status {
+    .status-card {
       margin: 20px 0;
-      padding: 12px;
+      padding: 15px;
       background: #f9f9f9;
       border-left: 4px solid #1890ff;
-      font-size: 16px;
+      border-radius: 6px;
+    }
+    .status-card.error {
+      border-left-color: #ff4d4f;
+      background: #fff2f0;
+    }
+    .status-card.success {
+      border-left-color: #52c41a;
+      background: #f6ffed;
     }
     button {
       display: block;
@@ -41,31 +51,74 @@
       border-radius: 6px;
       cursor: pointer;
       margin: 10px 0;
+      transition: all 0.3s;
+    }
+    button:hover:not(:disabled) {
+      background: #40a9ff;
+      transform: translateY(-2px);
+      box-shadow: 0 4px 8px rgba(0,0,0,0.1);
     }
     button:disabled {
       background: #ccc;
       cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
     }
     button.success {
       background: #52c41a;
     }
+    button.success:hover:not(:disabled) {
+      background: #73d13d;
+    }
     .log {
       margin-top: 20px;
-      padding: 10px;
+      padding: 15px;
       background: #f0f0f0;
-      font-family: monospace;
+      font-family: 'Courier New', monospace;
       white-space: pre-wrap;
-      border-radius: 4px;
+      border-radius: 6px;
       max-height: 300px;
       overflow-y: auto;
+      font-size: 14px;
+      border: 1px solid #e8e8e8;
     }
     .debug-info {
-      margin: 10px 0;
-      padding: 10px;
+      margin: 15px 0;
+      padding: 15px;
       background: #fff2e8;
       border: 1px solid #ffbb96;
-      border-radius: 4px;
+      border-radius: 6px;
       font-size: 14px;
+    }
+    .section {
+      margin: 20px 0;
+    }
+    .section-title {
+      font-weight: bold;
+      margin-bottom: 10px;
+      color: #1890ff;
+    }
+    .retry-btn {
+      display: inline-block;
+      padding: 8px 16px;
+      background: #1890ff;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-top: 10px;
+      font-size: 14px;
+    }
+    .scan-result {
+      margin: 15px 0;
+      padding: 12px;
+      background: #f0f9ff;
+      border: 1px solid #91d5ff;
+      border-radius: 6px;
+      word-break: break-all;
+    }
+    .hidden {
+      display: none;
     }
   </style>
 </head>
@@ -74,18 +127,36 @@
     <h1>二维码扫描 & AI表格写入</h1>
     
     <div class="debug-info">
-      <strong>调试信息：</strong>
+      <div class="section-title">环境检测信息</div>
       <div id="debugInfo">正在检测环境...</div>
     </div>
     
-    <div id="status">正在初始化钉钉环境...</div>
+    <div class="status-card" id="status">
+      正在初始化钉钉环境...
+    </div>
     
-    <button id="scanBtn" disabled>扫描二维码</button>
-    <button id="writeTableBtn" disabled class="success">写入 AI 表格</button>
+    <div class="section">
+      <button id="scanBtn" disabled>
+        📷 扫描二维码
+      </button>
+      <div id="scanResult" class="scan-result hidden">
+        <!-- 扫码结果将显示在这里 -->
+      </div>
+    </div>
     
-    <div class="log" id="log"></div>
+    <div class="section">
+      <button id="writeTableBtn" disabled class="success">
+        📊 写入 AI 表格
+      </button>
+    </div>
+    
+    <div class="section">
+      <div class="section-title">操作日志</div>
+      <div class="log" id="log"></div>
+    </div>
   </div>
 
+  <!-- 使用最新的钉钉JSAPI -->
   <script src="https://g.alicdn.com/dingding/dingtalk-jsapi/2.20.5/dingtalk.open.js"></script>
 
   <script>
@@ -94,6 +165,7 @@
     
     // 全局变量
     let scanData = null;
+    let isDingTalkReady = false;
 
     // ========== 工具函数 ==========
     function log(msg) {
@@ -104,14 +176,30 @@
       console.log(line);
     }
 
-    function updateStatus(msg, isError = false) {
+    function updateStatus(msg, type = 'info') {
       const statusEl = document.getElementById('status');
       statusEl.textContent = msg;
-      statusEl.style.borderLeftColor = isError ? '#ff4d4f' : '#1890ff';
+      statusEl.className = 'status-card';
+      
+      if (type === 'error') {
+        statusEl.classList.add('error');
+      } else if (type === 'success') {
+        statusEl.classList.add('success');
+      }
     }
 
     function updateDebugInfo(info) {
-      document.getElementById('debugInfo').textContent = info;
+      document.getElementById('debugInfo').innerHTML = info;
+    }
+
+    function showScanResult(data) {
+      const resultEl = document.getElementById('scanResult');
+      resultEl.innerHTML = `<strong>扫码结果：</strong> ${data}`;
+      resultEl.classList.remove('hidden');
+    }
+
+    function hideScanResult() {
+      document.getElementById('scanResult').classList.add('hidden');
     }
 
     // ========== 环境检测 ==========
@@ -121,14 +209,75 @@
       // 检查是否在钉钉环境
       if (typeof dd === 'undefined') {
         envInfo.push('❌ 未检测到钉钉环境');
+        
+        // 检查是否在移动设备
+        if (/DingTalk/i.test(navigator.userAgent)) {
+          envInfo.push('✅ 检测到钉钉UserAgent');
+          // 可能在钉钉中但JSAPI加载失败
+        } else {
+          envInfo.push('❌ 不在钉钉App中');
+        }
       } else {
         envInfo.push('✅ 检测到钉钉环境');
+        if (dd.version) {
+          envInfo.push(`钉钉版本: ${dd.version}`);
+        }
       }
       
       // 检查当前URL
       envInfo.push(`🌐 当前URL: ${window.location.href}`);
       
-      updateDebugInfo(envInfo.join(' | '));
+      // 检查UserAgent
+      envInfo.push(`📱 UserAgent: ${navigator.userAgent.substring(0, 50)}...`);
+      
+      updateDebugInfo(envInfo.join('<br>'));
+    }
+
+    // ========== 钉钉JSAPI动态加载 ==========
+    function loadDingTalkJSAPI() {
+      return new Promise((resolve, reject) => {
+        // 检查是否已加载
+        if (typeof dd !== 'undefined') {
+          log('✅ 钉钉JSAPI已加载');
+          resolve();
+          return;
+        }
+        
+        // 如果已经有一个脚本在加载，等待它完成
+        if (window.dingtalkLoading) {
+          const checkInterval = setInterval(() => {
+            if (typeof dd !== 'undefined') {
+              clearInterval(checkInterval);
+              resolve();
+            }
+          }, 100);
+          return;
+        }
+        
+        window.dingtalkLoading = true;
+        
+        const script = document.createElement('script');
+        script.src = 'https://g.alicdn.com/dingding/dingtalk-jsapi/2.20.5/dingtalk.open.js';
+        script.onload = () => {
+          log('✅ 钉钉JSAPI脚本加载成功');
+          // 给钉钉一点时间来注入dd对象
+          setTimeout(() => {
+            if (typeof dd !== 'undefined') {
+              window.dingtalkLoading = false;
+              resolve();
+            } else {
+              window.dingtalkLoading = false;
+              reject(new Error('JSAPI加载但dd对象未注入'));
+            }
+          }, 500);
+        };
+        script.onerror = () => {
+          window.dingtalkLoading = false;
+          reject(new Error('钉钉JSAPI脚本加载失败'));
+        };
+        
+        document.head.appendChild(script);
+      });
     }
 
     // ========== 初始化钉钉JSAPI ==========
@@ -151,6 +300,7 @@
 
         dd.ready(() => {
           log('🎉 dd.ready() 触发 - 钉钉初始化成功！');
+          isDingTalkReady = true;
           resolve();
         });
 
@@ -162,7 +312,9 @@
 
         // 设置超时
         setTimeout(() => {
-          reject(new Error('钉钉初始化超时'));
+          if (!isDingTalkReady) {
+            reject(new Error('钉钉初始化超时'));
+          }
         }, 10000);
       });
     }
@@ -203,7 +355,11 @@
         log('🚀 开始主初始化流程');
         checkEnvironment();
 
-        // 检查是否在钉钉环境
+        // 先尝试加载钉钉JSAPI
+        updateStatus('📥 正在加载钉钉环境...', 'info');
+        await loadDingTalkJSAPI();
+        
+        // 再次检查环境
         if (typeof dd === 'undefined') {
           throw new Error('请在钉钉App中打开此页面');
         }
@@ -212,21 +368,56 @@
         const config = await fetchDingTalkConfig();
         
         // 步骤2：初始化钉钉JSAPI
-        updateStatus('⚙️ 正在初始化钉钉JSAPI...');
+        updateStatus('⚙️ 正在初始化钉钉JSAPI...', 'info');
         await initializeDingTalk(config);
         
         // 步骤3：初始化成功
-        updateStatus('✅ 钉钉环境已就绪，可扫描二维码');
+        updateStatus('✅ 钉钉环境已就绪，可扫描二维码', 'success');
         document.getElementById('scanBtn').disabled = false;
-        updateDebugInfo('✅ 钉钉初始化成功 | 可扫描二维码');
+        updateDebugInfo('✅ 钉钉初始化成功<br>✅ 可扫描二维码<br>✅ 可写入AI表格');
         
         log('🎊 所有初始化步骤完成！');
 
       } catch (error) {
         log(`💥 初始化失败: ${error.message}`);
-        updateStatus(`❌ 初始化失败: ${error.message}`, true);
+        updateStatus(`❌ 初始化失败: ${error.message}`, 'error');
         updateDebugInfo(`❌ 初始化失败: ${error.message}`);
+        
+        // 提供更多帮助信息
+        if (error.message.includes('钉钉App')) {
+          const statusEl = document.getElementById('status');
+          statusEl.innerHTML += `
+            <br><br>
+            <strong>💡 解决方案：</strong>
+            <ul style="text-align: left; margin: 10px 0;">
+              <li>确保在钉钉App内打开此页面</li>
+              <li>检查网络连接是否正常</li>
+              <li>尝试刷新页面</li>
+              <li>联系管理员检查应用权限</li>
+            </ul>
+            <button class="retry-btn" onclick="window.location.reload()">🔄 刷新重试</button>
+          `;
+        } else {
+          const statusEl = document.getElementById('status');
+          statusEl.innerHTML += `
+            <br><br>
+            <button class="retry-btn" onclick="retryInitialization()">🔄 重新初始化</button>
+          `;
+        }
       }
+    }
+
+    // ========== 重新初始化函数 ==========
+    async function retryInitialization() {
+      log('🔄 用户请求重新初始化');
+      hideScanResult();
+      scanData = null;
+      document.getElementById('scanBtn').disabled = true;
+      document.getElementById('writeTableBtn').disabled = true;
+      document.getElementById('writeTableBtn').textContent = '写入 AI 表格';
+      document.getElementById('writeTableBtn').style.background = '';
+      
+      await main();
     }
 
     // ========== 页面加载完成后初始化 ==========
@@ -238,19 +429,20 @@
     // ========== 扫描按钮事件 ==========
     document.getElementById('scanBtn').addEventListener('click', function() {
       log('📲 用户点击"扫描二维码"');
-      updateStatus('📷 启动扫码...');
+      updateStatus('📷 启动扫码...', 'info');
       
       dd.biz.util.scan({
         type: "qrCode",
         onSuccess: function(data) {
           log('✅ 扫码成功: ' + data.text);
           scanData = data.text;
-          updateStatus('✅ 扫码成功！点击"写入 AI 表格"保存数据');
+          updateStatus('✅ 扫码成功！点击"写入 AI 表格"保存数据', 'success');
           document.getElementById('writeTableBtn').disabled = false;
+          showScanResult(data.text);
         },
         onFail: function(err) {
           log('❌ 扫码失败: ' + JSON.stringify(err));
-          updateStatus('❌ 扫码失败，请重试', true);
+          updateStatus('❌ 扫码失败，请重试', 'error');
         }
       });
     });
@@ -258,14 +450,15 @@
     // ========== 写入表格按钮事件 ==========
     document.getElementById('writeTableBtn').addEventListener('click', async function() {
       if (!scanData) {
-        updateStatus('❌ 请先扫描二维码！', true);
+        updateStatus('❌ 请先扫描二维码！', 'error');
         return;
       }
       
       const button = this;
+      const originalText = button.textContent;
       button.disabled = true;
-      button.textContent = '写入中...';
-      updateStatus('📤 正在写入AI表格...');
+      button.textContent = '⏳ 写入中...';
+      updateStatus('📤 正在写入AI表格...', 'info');
       
       try {
         const now = new Date();
@@ -274,7 +467,8 @@
           scanDate: now.toISOString().split('T')[0],
           scanTime: now.toTimeString().split(' ')[0],
           scanDateTime: now.toISOString(),
-          operator: dd.env.userName || '未知用户'
+          operator: dd.env.userName || '未知用户',
+          deviceInfo: navigator.userAgent
         };
         
         log('📊 准备写入数据: ' + JSON.stringify(tableData));
@@ -290,28 +484,34 @@
         });
         
         if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
         
         const result = await response.json();
         log('✅ 后端返回: ' + JSON.stringify(result));
         
         if (result.success) {
-          updateStatus('✅ 数据已成功写入AI表格！');
+          updateStatus('✅ 数据已成功写入AI表格！', 'success');
           button.textContent = '✅ 已写入';
           button.style.background = '#52c41a';
+          
+          // 3秒后重置按钮状态
+          setTimeout(() => {
+            button.textContent = originalText;
+            button.disabled = false;
+            button.style.background = '';
+          }, 3000);
         } else {
           throw new Error(result.error || '写入失败');
         }
       } catch (error) {
         log('❌ 写入失败: ' + error.message);
-        updateStatus('❌ 写入失败: ' + error.message, true);
+        updateStatus('❌ 写入失败: ' + error.message, 'error');
         button.disabled = false;
-        button.textContent = '写入 AI 表格';
+        button.textContent = originalText;
       }
     });
 
   </script>
 </body>
 </html>
-
