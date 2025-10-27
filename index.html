@@ -59,20 +59,13 @@
     }
     button:hover:not(:disabled) {
       background: #40a9ff;
-      transform: translateY(-2px);
-      box-shadow: 0 4px 8px rgba(0,0,0,0.1);
     }
     button:disabled {
       background: #ccc;
       cursor: not-allowed;
-      transform: none;
-      box-shadow: none;
     }
     button.success {
       background: #52c41a;
-    }
-    button.success:hover:not(:disabled) {
-      background: #73d13d;
     }
     .log {
       margin-top: 20px;
@@ -84,7 +77,6 @@
       max-height: 300px;
       overflow-y: auto;
       font-size: 14px;
-      border: 1px solid #e8e8e8;
     }
     .debug-info {
       margin: 15px 0;
@@ -94,36 +86,6 @@
       border-radius: 6px;
       font-size: 14px;
     }
-    .section {
-      margin: 20px 0;
-    }
-    .section-title {
-      font-weight: bold;
-      margin-bottom: 10px;
-      color: #1890ff;
-    }
-    .retry-btn {
-      display: inline-block;
-      padding: 8px 16px;
-      background: #1890ff;
-      color: white;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
-      margin-top: 10px;
-      font-size: 14px;
-    }
-    .scan-result {
-      margin: 15px 0;
-      padding: 12px;
-      background: #f0f9ff;
-      border: 1px solid #91d5ff;
-      border-radius: 6px;
-      word-break: break-all;
-    }
-    .hidden {
-      display: none;
-    }
     .solution-box {
       margin: 15px 0;
       padding: 15px;
@@ -131,10 +93,15 @@
       border: 1px solid #b7eb8f;
       border-radius: 6px;
     }
-    .solution-title {
-      font-weight: bold;
-      color: #389e0d;
-      margin-bottom: 10px;
+    .test-input {
+      width: 100%;
+      padding: 10px;
+      margin: 10px 0;
+      border: 1px solid #d9d9d9;
+      border-radius: 4px;
+    }
+    .hidden {
+      display: none;
     }
   </style>
 </head>
@@ -143,7 +110,7 @@
     <h1>二维码扫描 & AI表格写入</h1>
     
     <div class="debug-info">
-      <div class="section-title">环境检测信息</div>
+      <div><strong>环境检测信息</strong></div>
       <div id="debugInfo">正在检测环境...</div>
     </div>
     
@@ -152,30 +119,40 @@
     </div>
 
     <div id="solutionBox" class="solution-box hidden">
-      <div class="solution-title">💡 解决方案</div>
+      <div><strong>💡 解决方案</strong></div>
       <div id="solutionContent"></div>
     </div>
+
+    <div id="directTestBox" class="solution-box hidden">
+      <div><strong>🔧 后端服务测试</strong></div>
+      <div>
+        <button id="testBackendBtn">测试后端连接</button>
+        <div id="testResult"></div>
+      </div>
+    </div>
     
-    <div class="section">
+    <div>
       <button id="scanBtn" disabled>
         📷 扫描二维码
       </button>
-      <div id="scanResult" class="scan-result hidden">
+      <div id="scanResult" class="status-card hidden">
         <!-- 扫码结果将显示在这里 -->
       </div>
     </div>
     
-    <div class="section">
+    <div>
       <button id="writeTableBtn" disabled class="success">
         📊 写入 AI 表格
       </button>
     </div>
     
-    <div class="section">
-      <div class="section-title">操作日志</div>
+    <div>
+      <div><strong>操作日志</strong></div>
       <div class="log" id="log"></div>
     </div>
   </div>
+
+  <script src="https://g.alicdn.com/dingding/dingtalk-jsapi/2.13.42/dingtalk.open.js"></script>
 
   <script>
     // ========== 配置区 ==========
@@ -199,13 +176,9 @@
       statusEl.textContent = msg;
       statusEl.className = 'status-card';
       
-      if (type === 'error') {
-        statusEl.classList.add('error');
-      } else if (type === 'success') {
-        statusEl.classList.add('success');
-      } else if (type === 'warning') {
-        statusEl.classList.add('warning');
-      }
+      if (type === 'error') statusEl.classList.add('error');
+      else if (type === 'success') statusEl.classList.add('success');
+      else if (type === 'warning') statusEl.classList.add('warning');
     }
 
     function updateDebugInfo(info) {
@@ -219,8 +192,8 @@
       solutionBox.classList.remove('hidden');
     }
 
-    function hideSolution() {
-      document.getElementById('solutionBox').classList.add('hidden');
+    function showDirectTest() {
+      document.getElementById('directTestBox').classList.remove('hidden');
     }
 
     function showScanResult(data) {
@@ -229,31 +202,25 @@
       resultEl.classList.remove('hidden');
     }
 
-    function hideScanResult() {
-      document.getElementById('scanResult').classList.add('hidden');
-    }
-
     // ========== 环境检测 ==========
     function checkEnvironment() {
-      const envInfo = [];
+      const isDingTalkUA = /DingTalk/i.test(navigator.userAgent);
+      const currentUrl = window.location.href;
       
-      // 检查UserAgent
-      const isInDingTalk = /DingTalk/i.test(navigator.userAgent);
-      const isInMobile = /Mobile/i.test(navigator.userAgent);
+      let envInfo = [];
       
-      if (isInDingTalk) {
-        envInfo.push('✅ 检测到钉钉UserAgent');
+      if (isDingTalkUA) {
+        envInfo.push('✅ 检测到钉钉环境');
       } else {
         envInfo.push('❌ 未在钉钉环境中');
       }
       
-      if (isInMobile) {
+      if (/Mobile/i.test(navigator.userAgent)) {
         envInfo.push('✅ 在移动设备中');
       } else {
         envInfo.push('⚠️ 不在移动设备中');
       }
       
-      // 检查是否已加载dd对象
       if (typeof dd !== 'undefined') {
         envInfo.push('✅ dd对象已加载');
         if (dd.version) {
@@ -263,151 +230,96 @@
         envInfo.push('❌ dd对象未加载');
       }
       
-      // 检查当前URL
-      envInfo.push(`🌐 当前URL: ${window.location.href}`);
+      envInfo.push(`🌐 当前URL: ${currentUrl}`);
       
       updateDebugInfo(envInfo.join('<br>'));
-      return isInDingTalk;
+      return isDingTalkUA;
     }
 
-    // ========== 多CDN钉钉JSAPI加载 ==========
-    function loadDingTalkJSAPI() {
-      return new Promise((resolve, reject) => {
-        // 检查是否已加载
-        if (typeof dd !== 'undefined') {
-          log('✅ 钉钉JSAPI已加载');
-          resolve();
-          return;
+    // ========== 后端服务测试 ==========
+    async function testBackendConnection() {
+      const testResultEl = document.getElementById('testResult');
+      testResultEl.innerHTML = '测试中...';
+      
+      try {
+        const testUrl = `${BACKEND_URL}?url=${encodeURIComponent(window.location.href.split('#')[0])}`;
+        log(`🧪 测试后端连接: ${testUrl}`);
+        
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+        
+        const response = await fetch(testUrl, { signal: controller.signal });
+        clearTimeout(timeoutId);
+        
+        if (response.ok) {
+          const data = await response.json();
+          testResultEl.innerHTML = `✅ 后端服务正常<br>返回数据: ${JSON.stringify(data)}`;
+          log('✅ 后端连接测试成功');
+        } else {
+          testResultEl.innerHTML = `❌ 后端返回错误: ${response.status} ${response.statusText}`;
+          log(`❌ 后端测试失败: ${response.status} ${response.statusText}`);
         }
-        
-        const cdnSources = [
-          'https://g.alicdn.com/dingding/dingtalk-jsapi/2.20.5/dingtalk.open.js',
-          'https://g.alicdn.com/dingding/open-develop/4.9.0/dingtalk.js',
-          'https://g.alicdn.com/dingding/dingtalk-jsapi/2.13.42/dingtalk.open.js',
-          'https://cdn.jsdelivr.net/npm/dingtalk-jsapi@2.20.5/dingtalk.open.js'
-        ];
-        
-        let currentSourceIndex = 0;
-        let attempts = 0;
-        const maxAttempts = cdnSources.length;
-        
-        function tryNextSource() {
-          if (attempts >= maxAttempts) {
-            reject(new Error(`所有CDN源尝试失败 (${maxAttempts}次)`));
-            return;
-          }
-          
-          const source = cdnSources[currentSourceIndex];
-          log(`🔄 尝试加载JSAPI: ${source}`);
-          
-          const script = document.createElement('script');
-          script.src = source;
-          script.onload = () => {
-            log(`✅ JSAPI加载成功: ${source}`);
-            // 给钉钉一点时间来注入dd对象
-            const checkDd = setInterval(() => {
-              if (typeof dd !== 'undefined') {
-                clearInterval(checkDd);
-                resolve();
-              }
-            }, 100);
-            
-            // 5秒后超时
-            setTimeout(() => {
-              if (typeof dd === 'undefined') {
-                clearInterval(checkDd);
-                log(`⚠️ JSAPI加载但dd对象未注入，尝试下一个源`);
-                currentSourceIndex++;
-                attempts++;
-                tryNextSource();
-              }
-            }, 5000);
-          };
-          
-          script.onerror = () => {
-            log(`❌ JSAPI加载失败: ${source}`);
-            currentSourceIndex++;
-            attempts++;
-            tryNextSource();
-          };
-          
-          document.head.appendChild(script);
-        }
-        
-        tryNextSource();
-      });
+      } catch (error) {
+        testResultEl.innerHTML = `❌ 连接失败: ${error.message}`;
+        log(`❌ 后端测试异常: ${error.message}`);
+      }
     }
 
-    // ========== 手动创建基础dd对象 (备用方案) ==========
-    function createFallbackDdObject() {
-      log('🛠️ 创建备用dd对象');
-      
-      // 创建基本的dd对象结构
-      window.dd = {
-        version: 'fallback-1.0',
-        env: {
-          corpId: 'unknown',
-          userId: 'unknown',
-          userName: '测试用户'
-        },
-        // 基础配置方法
-        config: function(options) {
-          log('⚙️ 备用dd.config调用: ' + JSON.stringify(options));
-          return true;
-        },
-        // 基础ready方法
-        ready: function(callback) {
-          log('✅ 备用dd.ready调用');
-          setTimeout(callback, 100);
-        },
-        // 基础error方法
-        error: function(callback) {
-          log('⚠️ 备用dd.error设置');
-          window.ddErrorCallback = callback;
-        },
-        // 基础扫码方法
-        biz: {
-          util: {
-            scan: function(options) {
-              log('📷 备用扫码功能调用');
-              // 模拟扫码结果
-              const mockResult = {
-                text: 'MOCK_QRCODE_DATA_' + Date.now()
-              };
-              
-              if (options.onSuccess) {
-                setTimeout(() => options.onSuccess(mockResult), 1000);
-              }
-            }
+    // ========== 获取后端配置 ==========
+    async function fetchDingTalkConfig() {
+      try {
+        const currentUrl = window.location.href.split('#')[0];
+        log(`🔗 当前页面URL: ${currentUrl}`);
+
+        updateStatus('📡 正在请求后端签名配置...', 'info');
+        
+        const requestUrl = `${BACKEND_URL}?url=${encodeURIComponent(currentUrl)}`;
+        log(`📤 请求地址: ${requestUrl}`);
+
+        // 添加请求超时控制
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+        const response = await fetch(requestUrl, {
+          signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+
+        log(`📥 后端响应状态: ${response.status} ${response.statusText}`);
+
+        if (!response.ok) {
+          // 尝试获取更详细的错误信息
+          let errorDetail = '';
+          try {
+            const errorData = await response.text();
+            errorDetail = errorData;
+          } catch (e) {
+            errorDetail = '无法读取错误详情';
           }
-        },
-        // 运行时权限
-        runtime: {
-          permission: {
-            requestAuthCode: function(options) {
-              log('🔑 备用权限请求调用');
-              if (options.onSuccess) {
-                setTimeout(() => options.onSuccess({ code: 'MOCK_AUTH_CODE' }), 500);
-              }
-            }
-          }
+          throw new Error(`HTTP ${response.status}: ${response.statusText} - ${errorDetail}`);
         }
-      };
-      
-      log('✅ 备用dd对象创建完成');
-      return true;
+
+        const config = await response.json();
+        log('✅ 后端返回配置数据成功');
+        log(`📋 配置详情: agentId=${config.agentId}, corpId=${config.corpId}`);
+
+        return config;
+      } catch (error) {
+        if (error.name === 'AbortError') {
+          log('❌ 请求后端配置超时 (10秒)');
+          throw new Error('后端服务响应超时，请检查服务状态');
+        } else {
+          log(`❌ 获取后端配置失败: ${error.message}`);
+          throw error;
+        }
+      }
     }
 
     // ========== 初始化钉钉JSAPI ==========
     function initializeDingTalk(config) {
       return new Promise((resolve, reject) => {
         log('⚙️ 开始初始化钉钉JSAPI...');
-        
-        // 检查dd对象是否存在
-        if (typeof dd === 'undefined') {
-          reject(new Error('dd对象不存在，无法初始化'));
-          return;
-        }
         
         dd.config({
           agentId: config.agentId,
@@ -443,35 +355,6 @@
       });
     }
 
-    // ========== 获取后端配置 ==========
-    async function fetchDingTalkConfig() {
-      try {
-        const currentUrl = window.location.href.split('#')[0];
-        log(`🔗 当前页面URL: ${currentUrl}`);
-
-        updateStatus('📡 正在请求后端签名配置...', 'info');
-        
-        const requestUrl = `${BACKEND_URL}?url=${encodeURIComponent(currentUrl)}`;
-        log(`📤 请求地址: ${requestUrl}`);
-
-        const response = await fetch(requestUrl);
-        log(`📥 后端响应状态: ${response.status} ${response.statusText}`);
-
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-
-        const config = await response.json();
-        log('✅ 后端返回配置数据成功');
-        log(`📋 配置详情: agentId=${config.agentId}, corpId=${config.corpId}`);
-
-        return config;
-      } catch (error) {
-        log(`❌ 获取后端配置失败: ${error.message}`);
-        throw error;
-      }
-    }
-
     // ========== 主初始化流程 ==========
     async function main() {
       try {
@@ -479,37 +362,12 @@
         const isInDingTalk = checkEnvironment();
 
         if (!isInDingTalk) {
-          updateStatus('❌ 请在钉钉App中打开此页面', 'error');
-          showSolution(`
-            <ul>
-              <li>请确保在钉钉手机App中打开此页面</li>
-              <li>不要使用浏览器直接访问</li>
-              <li>请联系管理员将此页面添加到钉钉工作台</li>
-            </ul>
-            <button class="retry-btn" onclick="retryInitialization()">🔄 重新检测</button>
-          `);
-          return;
+          throw new Error('请在钉钉App中打开此页面');
         }
 
-        // 尝试加载钉钉JSAPI
-        updateStatus('📥 正在加载钉钉环境...', 'info');
-        await loadDingTalkJSAPI();
-        
-        // 如果JSAPI加载失败但我们在钉钉环境中，使用备用方案
+        // 检查dd对象
         if (typeof dd === 'undefined') {
-          log('⚠️ JSAPI加载失败，启用备用方案');
-          updateStatus('⚠️ 使用备用模式（功能受限）', 'warning');
-          createFallbackDdObject();
-          
-          showSolution(`
-            <ul>
-              <li>钉钉JSAPI加载失败，已启用备用模式</li>
-              <li>扫码功能将使用模拟数据</li>
-              <li>写入表格功能可能受限</li>
-              <li>建议检查网络连接或联系管理员</li>
-            </ul>
-            <button class="retry-btn" onclick="retryInitialization()">🔄 重新初始化</button>
-          `);
+          throw new Error('钉钉JSAPI加载失败');
         }
 
         // 获取后端配置
@@ -523,7 +381,6 @@
         updateStatus('✅ 钉钉环境已就绪，可扫描二维码', 'success');
         document.getElementById('scanBtn').disabled = false;
         updateDebugInfo('✅ 钉钉初始化成功<br>✅ 可扫描二维码<br>✅ 可写入AI表格');
-        hideSolution();
         
         log('🎊 所有初始化步骤完成！');
 
@@ -532,66 +389,46 @@
         updateStatus(`❌ 初始化失败: ${error.message}`, 'error');
         
         // 提供具体的解决方案
-        if (error.message.includes('CDN') || error.message.includes('JSAPI')) {
+        if (error.message.includes('后端') || error.message.includes('Failed to fetch')) {
           showSolution(`
             <ul>
-              <li><strong>网络问题：</strong>钉钉JSAPI CDN无法访问</li>
+              <li><strong>后端服务连接失败</strong></li>
+              <li><strong>可能原因：</strong>
+                <ul>
+                  <li>后端服务未启动或已停止</li>
+                  <li>网络连接问题</li>
+                  <li>域名解析失败</li>
+                  <li>防火墙或安全组限制</li>
+                </ul>
+              </li>
               <li><strong>解决方案：</strong>
                 <ul>
-                  <li>检查网络连接，尝试切换WiFi/4G/5G</li>
-                  <li>联系网络管理员检查防火墙设置</li>
-                  <li>尝试使用企业内网或VPN</li>
+                  <li>检查阿里云函数计算服务状态</li>
+                  <li>确认函数计算HTTP触发器配置正确</li>
+                  <li>检查函数计算日志查看详细错误</li>
+                  <li>联系管理员检查网络配置</li>
                 </ul>
               </li>
             </ul>
-            <button class="retry-btn" onclick="retryInitialization()">🔄 重新初始化</button>
           `);
-        } else if (error.message.includes('后端')) {
-          showSolution(`
-            <ul>
-              <li><strong>后端服务问题：</strong>无法获取配置信息</li>
-              <li><strong>解决方案：</strong>
-                <ul>
-                  <li>检查后端服务是否正常运行</li>
-                  <li>联系管理员检查函数计算服务状态</li>
-                  <li>确认环境变量配置正确</li>
-                </ul>
-              </li>
-            </ul>
-            <button class="retry-btn" onclick="retryInitialization()">🔄 重新初始化</button>
-          `);
-        } else {
-          showSolution(`
-            <ul>
-              <li>未知错误，请尝试以下方案：</li>
-              <li>刷新页面重试</li>
-              <li>退出钉钉重新进入</li>
-              <li>联系技术支持</li>
-            </ul>
-            <button class="retry-btn" onclick="retryInitialization()">🔄 重新初始化</button>
-          `);
+          showDirectTest();
         }
+        
+        // 添加重试按钮
+        const statusEl = document.getElementById('status');
+        statusEl.innerHTML += `<br><button class="retry-btn" onclick="retryInitialization()">🔄 重新初始化</button>`;
       }
     }
 
     // ========== 重新初始化函数 ==========
     async function retryInitialization() {
       log('🔄 用户请求重新初始化');
-      hideScanResult();
-      hideSolution();
+      document.getElementById('solutionBox').classList.add('hidden');
+      document.getElementById('directTestBox').classList.add('hidden');
+      document.getElementById('scanResult').classList.add('hidden');
       scanData = null;
       document.getElementById('scanBtn').disabled = true;
       document.getElementById('writeTableBtn').disabled = true;
-      document.getElementById('writeTableBtn').textContent = '写入 AI 表格';
-      document.getElementById('writeTableBtn').style.background = '';
-      
-      // 清除可能存在的旧脚本
-      const oldScripts = document.querySelectorAll('script[src*="dingtalk"]');
-      oldScripts.forEach(script => script.remove());
-      
-      // 重置全局变量
-      isDingTalkReady = false;
-      delete window.dd;
       
       await main();
     }
@@ -599,6 +436,10 @@
     // ========== 页面加载完成后初始化 ==========
     document.addEventListener('DOMContentLoaded', function() {
       log('📄 页面加载完成，开始初始化...');
+      
+      // 设置后端测试按钮事件
+      document.getElementById('testBackendBtn').addEventListener('click', testBackendConnection);
+      
       main();
     });
 
@@ -606,13 +447,6 @@
     document.getElementById('scanBtn').addEventListener('click', function() {
       log('📲 用户点击"扫描二维码"');
       updateStatus('📷 启动扫码...', 'info');
-      
-      // 检查dd对象是否存在
-      if (typeof dd === 'undefined') {
-        log('❌ dd对象不存在，无法扫码');
-        updateStatus('❌ 钉钉环境未就绪，无法扫码', 'error');
-        return;
-      }
       
       dd.biz.util.scan({
         type: "qrCode",
@@ -650,7 +484,7 @@
           scanDate: now.toISOString().split('T')[0],
           scanTime: now.toTimeString().split(' ')[0],
           scanDateTime: now.toISOString(),
-          operator: (dd && dd.env && dd.env.userName) ? dd.env.userName : '未知用户',
+          operator: dd.env.userName || '未知用户',
           deviceInfo: navigator.userAgent
         };
         
