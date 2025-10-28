@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>二维码扫描 & AI表格写入</title>
   <style>
-    /* 保持原有样式不变 */
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       padding: 20px;
@@ -72,7 +71,7 @@
     <div class="status-card success">
       ✅ 钉钉环境检测正常<br>
       ✅ 扫码功能已验证正常<br>
-      🔄 使用JSONP连接后端
+      🔄 使用JSONP获取配置，CORS写入数据
     </div>
     
     <div>
@@ -116,7 +115,7 @@
 
     let scanData = null;
 
-    // JSONP方式调用后端
+    // JSONP方式调用后端获取配置
     function callBackendWithJsonp() {
       return new Promise((resolve, reject) => {
         const callbackName = 'jsonp_callback_' + Date.now();
@@ -157,11 +156,73 @@
       });
     }
 
+    // 通过CORS POST请求写入AI表格
+    async function writeToAiTable(tableData) {
+      const response = await fetch('https://get-config-nltlezcizh.cn-hangzhou.fcapp.run', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          tableData: tableData
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      return await response.json();
+    }
+
+    // 初始化钉钉配置
+    async function initDingtalkConfig() {
+      log('🔄 开始初始化钉钉配置...');
+      
+      try {
+        // 使用JSONP获取配置
+        const config = await callBackendWithJsonp();
+        log(`✅ 钉钉配置获取成功: agentId=${config.agentId}, corpId=${config.corpId}`);
+        
+        // 初始化钉钉JSAPI
+        dd.config({
+          agentId: config.agentId,
+          corpId: config.corpId,
+          timeStamp: config.timeStamp,
+          nonceStr: config.nonceStr,
+          signature: config.signature,
+          jsApiList: [
+            'biz.util.scan',
+            'device.notification.alert',
+            'device.notification.confirm',
+            'device.notification.prompt',
+            'biz.ding.create',
+            'biz.util.uploadImage',
+            'biz.util.openLink'
+          ]
+        });
+        
+        dd.ready(() => {
+          log('✅ 钉钉JSAPI初始化成功');
+          document.getElementById('scanBtn').disabled = false;
+        });
+        
+        dd.error((err) => {
+          log(`❌ 钉钉JSAPI初始化失败: ${JSON.stringify(err)}`);
+          alert('钉钉JSAPI初始化失败，请检查配置');
+        });
+        
+      } catch (error) {
+        log(`❌ 初始化钉钉配置失败: ${error.message}`);
+        alert('获取钉钉配置失败，请检查网络连接');
+      }
+    }
+
     // 页面加载
     document.addEventListener('DOMContentLoaded', function() {
       log('📄 页面加载完成');
-      log('✅ 钉钉环境检测通过');
-      document.getElementById('scanBtn').disabled = false;
+      // 延迟初始化，确保钉钉环境已加载
+      setTimeout(initDingtalkConfig, 500);
     });
 
     // JSONP测试按钮
@@ -216,11 +277,19 @@
       log('📤 准备写入数据: ' + scanData);
       
       try {
-        // 使用JSONP方式写入数据
-        // 这里需要后端支持JSONP的POST请求，或者我们使用模拟写入
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        // 准备写入数据
+        const tableData = {
+          scanContent: scanData,
+          scanDate: new Date().toLocaleDateString(),
+          scanTime: new Date().toLocaleTimeString(),
+          scanDateTime: new Date().toISOString(),
+          operator: '钉钉用户',
+          deviceInfo: navigator.userAgent
+        };
         
-        log('✅ 数据模拟写入完成');
+        // 通过CORS POST请求写入AI表格
+        const result = await writeToAiTable(tableData);
+        log('✅ 数据写入完成: ' + JSON.stringify(result));
         button.textContent = '✅ 已写入';
         button.style.background = '#52c41a';
         
@@ -233,9 +302,13 @@
         log('❌ 写入失败: ' + error.message);
         button.disabled = false;
         button.textContent = originalText;
+        alert('写入失败: ' + error.message);
       }
     });
 
   </script>
 </body>
 </html>
+
+
+
