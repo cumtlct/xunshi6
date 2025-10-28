@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>扫码写入AI表格</title>
   <style>
+    /* 样式与之前一致，确保手机端适配 */
     body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; padding: 15px; background: #f5f5f5; color: #333; }
     .container { max-width: 500px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
     h1 { text-align: center; color: #1890ff; font-size: 1.5rem; margin-bottom: 20px; }
@@ -50,7 +51,7 @@
       🧪 测试后端连接
     </button>
     
-    <!-- 日志区域（手机调试核心） -->
+    <!-- 日志区域（手机端调试核心） -->
     <div class="log-container">
       <div class="log-title">操作日志（点击可复制）</div>
       <div class="log" id="log" onclick="copyLog()">
@@ -65,7 +66,8 @@
   <script>
     // 全局变量
     let scanData = null;
-    let operatorId = null; // 用户标识（unionId或userId）
+    let userId = null; // 最终使用userId作为operatorId
+    let corpId = null; // 从JSONP配置中获取企业ID
     const BACKEND_URL = 'https://get-config-nltlezcizh.cn-hangzhou.fcapp.run'; // 替换为你的后端地址
 
     // ==============================
@@ -140,68 +142,64 @@
     }
 
     // ==============================
-    // 3. 获取用户标识（核心修复：兼容unionId和userId）
+    // 3. 核心：免登流程获取userId（钉钉官方标准方案）
     // ==============================
-    function getUserIdentifier() {
+    /**
+     * 步骤1：获取免登授权码（authCode）
+     */
+    function getAuthCode() {
       return new Promise((resolve, reject) => {
-        log('🔍 开始获取用户信息（兼容unionId和userId）');
-        dd.biz.user.get({
-          needAllInfo: true, // 强制获取完整信息
-          forceGetUserInfo: true, // 避免缓存
-          onSuccess: function(userInfo) {
-            // 打印所有可用字段（手机端调试关键）
-            const fields = Object.keys(userInfo).join(', ');
-            log(`📱 获取用户字段: ${fields}`);
-            
-            // 优先用unionId（跨企业唯一）
-            if (userInfo.unionid) {
-              operatorId = userInfo.unionid;
-              log(`✅ 成功获取unionId: ${operatorId.slice(0, 6)}...`); // 隐藏部分字符
-              resolve(operatorId);
-            }
-            // 次选用userId（企业内唯一，表格支持）
-            else if (userInfo.userId || userInfo.userid) { // 兼容大小写
-              operatorId = userInfo.userId || userInfo.userid;
-              log(`⚠️ 未获取到unionId，使用userId: ${operatorId.slice(0, 6)}...`);
-              resolve(operatorId);
-            }
-            // 无任何标识（必须处理权限）
-            else {
-              const errMsg = `未获取到用户标识，仅返回字段: ${fields}`;
-              log(`❌ ${errMsg}`);
-              reject(new Error(errMsg + '（请检查微应用权限）'));
-            }
+        log('🔑 开始获取免登授权码...');
+        dd.runtime.permission.requestAuthCode({
+          corpId: corpId, // 从JSONP配置中获取企业ID
+          onSuccess: function(res) {
+            const authCode = res.code;
+            log(`✅ 免登授权码获取成功: ${authCode.slice(0, 6)}...`);
+            resolve(authCode);
           },
           onFail: function(err) {
-            const errMsg = `接口调用失败: 错误码=${err.errCode}，信息=${err.message}`;
+            const errMsg = `免登授权码获取失败: ${err.message}（错误码: ${err.errCode}）`;
             log(`❌ ${errMsg}`);
-            // 常见错误码提示（手机端友好）
-            if (err.errCode === 60121) {
-              reject(new Error('用户不在应用可见范围内，请联系管理员添加'));
-            } else if (err.errCode === 403) {
-              reject(new Error('缺少用户信息权限，请管理员在开放平台开通'));
-            } else {
-              reject(new Error(errMsg));
-            }
+            reject(new Error(errMsg));
           }
         });
       });
     }
 
+    /**
+     * 步骤2：后端兑换userId
+     */
+    async function exchangeUserId(authCode) {
+      log('🔄 开始兑换userId...');
+      const response = await fetch(`${BACKEND_URL}/exchange-userid`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ authCode }),
+        credentials: 'omit'
+      });
+      const data = await response.json();
+      if (!data.success || !data.userId) {
+        throw new Error(`userId兑换失败: ${data.error || '未知错误'}`);
+      }
+      userId = data.userId;
+      log(`✅ 兑换到userId: ${userId.slice(0, 6)}...`);
+      return userId;
+    }
+
     // ==============================
-    // 4. 写入AI表格（确保operatorId传递）
+    // 4. 写入AI表格（确保userId传递）
     // ==============================
     async function writeToAiTable(tableData) {
-      if (!operatorId) {
-        throw new Error('未获取到操作人信息，无法写入表格');
+      if (!userId) {
+        throw new Error('未获取到用户标识，无法写入表格');
       }
       if (!scanData) {
         throw new Error('请先扫描二维码');
       }
       
       try {
-        // 拼接operatorId到请求参数（后端必需）
-        const fullUrl = `${BACKEND_URL}?operatorId=${encodeURIComponent(operatorId)}`;
+        // 拼接userId到请求参数（后端必需）
+        const fullUrl = `${BACKEND_URL}?operatorId=${encodeURIComponent(userId)}`;
         log(`📥 发起写入请求: ${fullUrl.slice(0, 50)}...`);
         
         const response = await fetch(fullUrl, {
@@ -241,13 +239,14 @@
       initStatus.textContent = '🔄 正在初始化钉钉环境...';
       
       try {
-        // 步骤1: 获取钉钉配置
+        // 步骤1: 获取钉钉配置（含corpId）
         initStatus.textContent = '🔄 正在获取钉钉配置...';
         const dingConfig = await callBackendWithJsonp();
+        corpId = dingConfig.corpId; // 保存企业ID用于免登
         log(`✅ 钉钉配置获取成功: corpId=${dingConfig.corpId.slice(0, 6)}...`);
         
-        // 步骤2: 初始化JSAPI
-        initStatus.textContent = '🔄 正在初始化扫码功能...';
+        // 步骤2: 初始化JSAPI（仅需基础权限）
+        initStatus.textContent = '🔄 正在初始化基础功能...';
         dd.config({
           agentId: dingConfig.agentId,
           corpId: dingConfig.corpId,
@@ -258,7 +257,7 @@
             'biz.util.scan',          // 扫码
             'device.notification.alert', // 弹窗
             'device.notification.confirm', // 确认框
-            'biz.user.get'            // 获取用户信息
+            'runtime.permission.requestAuthCode' // 免登授权码（核心）
           ]
         });
         
@@ -269,20 +268,23 @@
         });
         log('✅ 钉钉JSAPI初始化成功');
         
-        // 步骤4: 获取用户标识（容错处理）
+        // 步骤4: 执行免登流程（获取userId）
         initStatus.className = 'status-card status-warning';
-        initStatus.textContent = '🔄 正在获取用户信息...';
+        initStatus.textContent = '🔄 正在获取用户标识...';
         try {
-          await getUserIdentifier();
+          const authCode = await getAuthCode();
+          await exchangeUserId(authCode);
           initStatus.className = 'status-card status-success';
           initStatus.textContent = '✅ 初始化完成，可扫码';
           document.getElementById('scanBtn').disabled = false;
-        } catch (userErr) {
-          // 用户信息获取失败，但仍允许扫码（仅写入受影响）
-          initStatus.className = 'status-card status-warning';
-          initStatus.textContent = `⚠️ 初始化警告: ${userErr.message}\n（可扫码，但无法写入）`;
-          document.getElementById('scanBtn').disabled = false; // 允许扫码
-          log(`⚠️ 用户信息获取失败，但继续运行: ${userErr.message}`);
+        } catch (authErr) {
+          log(`⚠️ 免登流程失败，原因: ${authErr.message}`);
+          initStatus.className = 'status-card status-error';
+          initStatus.textContent = `❌ 初始化失败: ${authErr.message}\n（请检查网络或权限）`;
+          dd.device.notification.alert({
+            message: `初始化失败: ${authErr.message}`,
+            title: '错误'
+          });
         }
         
       } catch (error) {
@@ -339,7 +341,7 @@
             scanDate: new Date().toLocaleDateString(),
             scanTime: new Date().toLocaleTimeString(),
             scanDateTime: new Date().toISOString(),
-            operator: operatorId || '未知用户', // 显示用户标识
+            operatorId: userId, // 显式存储用户标识
             deviceInfo: `钉钉APP(${dd.env.platform})` // 简化设备信息（手机端友好）
           };
           
@@ -372,7 +374,7 @@
       // 测试按钮
       document.getElementById('testJsonpBtn').addEventListener('click', async function() {
         const btn = this;
-        btn.disabled = true;
+        btn.disabled = false;
         btn.textContent = '🧪 测试中...';
         
         try {
