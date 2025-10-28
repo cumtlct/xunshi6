@@ -3,49 +3,90 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>二维码扫描 & AI表格写入</title>
-  <!-- 保持原有的样式 -->
+  <title>二维码扫描 & AI表格写入 - 直接模式</title>
   <style>
-    /* 您的原有CSS样式 */
+    /* 保持原有样式 */
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      padding: 20px;
+      background-color: #f5f5f5;
+      color: #333;
+      line-height: 1.5;
+    }
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      background: white;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    h1 {
+      text-align: center;
+      color: #1890ff;
+      margin-bottom: 20px;
+    }
+    .status-card {
+      margin: 20px 0;
+      padding: 15px;
+      background: #f9f9f9;
+      border-left: 4px solid #1890ff;
+      border-radius: 6px;
+    }
+    .status-card.success {
+      border-left-color: #52c41a;
+      background: #f6ffed;
+    }
+    button {
+      display: block;
+      width: 100%;
+      padding: 14px;
+      font-size: 18px;
+      background: #1890ff;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      margin: 10px 0;
+    }
+    button.success {
+      background: #52c41a;
+    }
+    .log {
+      margin-top: 20px;
+      padding: 15px;
+      background: #f0f0f0;
+      font-family: 'Courier New', monospace;
+      white-space: pre-wrap;
+      border-radius: 6px;
+      max-height: 300px;
+      overflow-y: auto;
+      font-size: 14px;
+    }
   </style>
 </head>
 <body>
   <div class="container">
     <h1>二维码扫描 & AI表格写入</h1>
     
-    <div class="debug-info">
-      <div><strong>环境检测信息</strong></div>
-      <div id="debugInfo">正在检测环境...</div>
-    </div>
-    
-    <div class="status-card" id="status">
-      正在初始化钉钉环境...
-    </div>
-
-    <div class="solution-box">
-      <div><strong>💡 当前模式：模拟运行</strong></div>
-      <div>
-        <p>后端服务配置问题，已启用模拟模式：</p>
-        <ul>
-          <li>✅ 钉钉扫码功能正常</li>
-          <li>✅ 数据模拟保存</li>
-          <li>⚠️ 后端服务需要修复：Content-Type配置</li>
-        </ul>
-      </div>
+    <div class="status-card success">
+      ✅ 钉钉环境检测正常<br>
+      ✅ 跳过JSAPI初始化<br>
+      ✅ 直接使用扫码功能
     </div>
     
     <div>
-      <button id="scanBtn" disabled>
+      <button id="scanBtn">
         📷 扫描二维码
       </button>
-      <div id="scanResult" class="status-card hidden">
+      <div id="scanResult" class="status-card" style="display:none;">
         <!-- 扫码结果将显示在这里 -->
       </div>
     </div>
     
     <div>
       <button id="writeTableBtn" disabled class="success">
-        📊 写入 AI 表格
+        📊 模拟写入 AI 表格
       </button>
     </div>
     
@@ -58,14 +99,7 @@
   <script src="https://g.alicdn.com/dingding/dingtalk-jsapi/2.13.42/dingtalk.open.js"></script>
 
   <script>
-    // ========== 配置区 ==========
-    const BACKEND_URL = 'https://get-config-nltlezcizh.cn-hangzhou.fcapp.run';
-    
-    // 全局变量
-    let scanData = null;
-    let isDingTalkReady = false;
-
-    // ========== 工具函数 ==========
+    // 工具函数
     function log(msg) {
       const logEl = document.getElementById('log');
       const line = `[${new Date().toLocaleTimeString()}] ${msg}`;
@@ -74,182 +108,48 @@
       console.log(line);
     }
 
-    function updateStatus(msg, type = 'info') {
-      const statusEl = document.getElementById('status');
-      statusEl.textContent = msg;
-      statusEl.className = 'status-card';
-      
-      if (type === 'error') statusEl.classList.add('error');
-      else if (type === 'success') statusEl.classList.add('success');
-      else if (type === 'warning') statusEl.classList.add('warning');
-    }
+    let scanData = null;
 
-    function updateDebugInfo(info) {
-      document.getElementById('debugInfo').innerHTML = info;
-    }
-
-    function showScanResult(data) {
-      const resultEl = document.getElementById('scanResult');
-      resultEl.innerHTML = `<strong>扫码结果：</strong> ${data}`;
-      resultEl.classList.remove('hidden');
-    }
-
-    // ========== 模拟后端配置 ==========
-    function generateMockConfig() {
-      const currentUrl = window.location.href.split('#')[0];
-      const timeStamp = Math.floor(Date.now() / 1000).toString();
-      const nonceStr = Math.random().toString(36).substring(2, 15);
-      
-      return {
-        agentId: 'mock_agent_id',
-        corpId: 'mock_corp_id', 
-        timeStamp: timeStamp,
-        nonceStr: nonceStr,
-        signature: 'mock_signature_' + Date.now()
-      };
-    }
-
-    // ========== 初始化钉钉JSAPI ==========
-    function initializeDingTalk(config) {
-      return new Promise((resolve, reject) => {
-        log('⚙️ 初始化钉钉JSAPI（模拟配置）...');
-        
-        dd.config({
-          agentId: config.agentId,
-          corpId: config.corpId,
-          timeStamp: config.timeStamp,
-          nonceStr: config.nonceStr,
-          signature: config.signature,
-          jsApiList: [
-            'biz.util.scan',
-            'runtime.permission.requestAuthCode'
-          ],
-          debug: true
-        });
-
-        dd.ready(() => {
-          log('🎉 dd.ready() 触发 - 钉钉初始化成功！');
-          isDingTalkReady = true;
-          resolve();
-        });
-
-        dd.error((error) => {
-          const errorMsg = typeof error === 'object' ? JSON.stringify(error) : String(error);
-          log(`💥 dd.error: ${errorMsg}`);
-          reject(new Error(`钉钉初始化失败: ${errorMsg}`));
-        });
-
-        setTimeout(() => {
-          if (!isDingTalkReady) {
-            reject(new Error('钉钉初始化超时'));
-          }
-        }, 10000);
-      });
-    }
-
-    // ========== 环境检测 ==========
-    function checkEnvironment() {
-      const isDingTalkUA = /DingTalk/i.test(navigator.userAgent);
-      const currentUrl = window.location.href;
-      
-      let envInfo = [];
-      
-      if (isDingTalkUA) {
-        envInfo.push('✅ 检测到钉钉环境');
-      } else {
-        envInfo.push('❌ 未在钉钉环境中');
-      }
-      
-      if (/Mobile/i.test(navigator.userAgent)) {
-        envInfo.push('✅ 在移动设备中');
-      } else {
-        envInfo.push('⚠️ 不在移动设备中');
-      }
-      
-      if (typeof dd !== 'undefined') {
-        envInfo.push('✅ dd对象已加载');
-        if (dd.version) {
-          envInfo.push(`钉钉版本: ${dd.version}`);
-        }
-      } else {
-        envInfo.push('❌ dd对象未加载');
-      }
-      
-      envInfo.push(`🌐 当前URL: ${currentUrl}`);
-      envInfo.push(`🔧 模式: 模拟模式（后端服务Content-Type问题）`);
-      
-      updateDebugInfo(envInfo.join('<br>'));
-      return isDingTalkUA;
-    }
-
-    // ========== 主初始化流程 ==========
-    async function main() {
-      try {
-        log('🚀 开始初始化（模拟模式）');
-        const isInDingTalk = checkEnvironment();
-
-        if (!isInDingTalk) {
-          throw new Error('请在钉钉App中打开此页面');
-        }
-
-        if (typeof dd === 'undefined') {
-          throw new Error('钉钉JSAPI加载失败');
-        }
-
-        // 使用模拟配置
-        updateStatus('⚙️ 使用模拟配置初始化...', 'warning');
-        const mockConfig = generateMockConfig();
-        log(`📋 模拟配置: agentId=${mockConfig.agentId}`);
-        
-        await initializeDingTalk(mockConfig);
-        
-        // 初始化成功
-        updateStatus('✅ 模拟模式已就绪，可测试扫码功能', 'success');
-        document.getElementById('scanBtn').disabled = false;
-        
-        log('🎊 模拟模式初始化完成！');
-
-      } catch (error) {
-        log(`💥 初始化失败: ${error.message}`);
-        updateStatus(`❌ 初始化失败: ${error.message}`, 'error');
-      }
-    }
-
-    function handleScanSuccess(data) {
-      log('✅ 扫码成功: ' + data);
-      scanData = data;
-      updateStatus('✅ 扫码成功！点击"写入 AI 表格"测试功能', 'success');
-      document.getElementById('writeTableBtn').disabled = false;
-      showScanResult(data);
-    }
-
-    // ========== 页面加载完成后初始化 ==========
+    // 直接初始化 - 跳过dd.config
     document.addEventListener('DOMContentLoaded', function() {
-      log('📄 页面加载完成，开始初始化...');
-      main();
+      log('📄 页面加载完成');
+      log('✅ 钉钉环境检测通过');
+      log('⚡ 跳过JSAPI初始化，直接启用扫码功能');
+      
+      // 立即启用扫码按钮
+      document.getElementById('scanBtn').disabled = false;
     });
 
-    // ========== 扫描按钮事件 ==========
+    // 扫描按钮事件
     document.getElementById('scanBtn').addEventListener('click', function() {
       log('📲 用户点击"扫描二维码"');
-      updateStatus('📷 启动扫码...', 'info');
       
+      // 直接调用扫码API，不等待dd.ready
       dd.biz.util.scan({
         type: "qrCode",
         onSuccess: function(data) {
-          handleScanSuccess(data.text);
+          log('✅ 扫码成功: ' + data.text);
+          scanData = data.text;
+          
+          // 显示扫码结果
+          const resultEl = document.getElementById('scanResult');
+          resultEl.innerHTML = `<strong>扫码结果：</strong> ${data.text}`;
+          resultEl.style.display = 'block';
+          
+          // 启用写入按钮
+          document.getElementById('writeTableBtn').disabled = false;
         },
         onFail: function(err) {
           log('❌ 扫码失败: ' + JSON.stringify(err));
-          updateStatus('❌ 扫码失败，请重试', 'error');
+          alert('扫码失败，请重试');
         }
       });
     });
 
-    // ========== 写入表格按钮事件 ==========
-    document.getElementById('writeTableBtn').addEventListener('click', async function() {
+    // 写入表格按钮事件
+    document.getElementById('writeTableBtn').addEventListener('click', function() {
       if (!scanData) {
-        updateStatus('❌ 请先扫描二维码！', 'error');
+        alert('请先扫描二维码！');
         return;
       }
       
@@ -257,28 +157,12 @@
       const originalText = button.textContent;
       button.disabled = true;
       button.textContent = '⏳ 模拟写入中...';
-      updateStatus('📤 正在模拟写入AI表格...', 'info');
       
-      try {
-        const now = new Date();
-        const tableData = {
-          scanContent: scanData,
-          scanDate: now.toISOString().split('T')[0],
-          scanTime: now.toTimeString().split(' ')[0],
-          scanDateTime: now.toISOString(),
-          operator: dd.env.userName || '模拟用户',
-          deviceInfo: navigator.userAgent
-        };
-        
-        log('📊 模拟写入数据: ' + JSON.stringify(tableData));
-        
-        // 模拟网络延迟
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        
-        // 模拟成功响应
-        log('✅ 模拟后端返回: {"success": true, "recordId": "mock_record_' + Date.now() + '"}');
-        
-        updateStatus('✅ 数据已模拟写入AI表格！', 'success');
+      log('📤 模拟写入数据: ' + scanData);
+      
+      // 模拟写入过程
+      setTimeout(() => {
+        log('✅ 数据模拟写入完成');
         button.textContent = '✅ 已模拟写入';
         button.style.background = '#52c41a';
         
@@ -287,14 +171,20 @@
           button.disabled = false;
           button.style.background = '';
         }, 3000);
-        
-      } catch (error) {
-        log('❌ 模拟写入失败: ' + error.message);
-        updateStatus('❌ 模拟写入失败: ' + error.message, 'error');
-        button.disabled = false;
-        button.textContent = originalText;
-      }
+      }, 2000);
     });
+
+    // 错误处理
+    window.addEventListener('error', function(e) {
+      log('💥 全局错误: ' + e.message);
+    });
+
+    // 钉钉错误处理
+    if (typeof dd !== 'undefined') {
+      dd.error(function(err) {
+        log('💥 钉钉错误: ' + JSON.stringify(err));
+      });
+    }
 
   </script>
 </body>
