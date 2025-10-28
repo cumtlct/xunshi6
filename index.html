@@ -71,7 +71,7 @@
     <div class="status-card success">
       ✅ 钉钉环境检测正常<br>
       ✅ 扫码功能已验证正常<br>
-      🔄 使用JSONP进行所有通信
+      🔄 使用JSONP获取配置，CORS写入数据
     </div>
     
     <div>
@@ -115,28 +115,19 @@
 
     let scanData = null;
 
-    // JSONP方式调用后端
-    function callBackendWithJsonp(url, data = null) {
+    // JSONP方式调用后端获取配置
+    function callBackendWithJsonp() {
       return new Promise((resolve, reject) => {
         const callbackName = 'jsonp_callback_' + Date.now();
+        const url = 'https://get-config-nltlezcizh.cn-hangzhou.fcapp.run?url=' + 
+                   encodeURIComponent(window.location.href) + 
+                   '&callback=' + callbackName;
         
-        // 构建URL，如果是POST数据，通过URL参数传递
-        let fullUrl = url;
-        if (data) {
-          // 将数据编码为URL参数
-          const params = new URLSearchParams();
-          params.append('data', JSON.stringify(data));
-          params.append('callback', callbackName);
-          fullUrl += '?' + params.toString();
-        } else {
-          fullUrl += '?callback=' + callbackName;
-        }
-        
-        log(`📤 JSONP请求: ${fullUrl}`);
+        log(`📤 JSONP请求: ${url}`);
         
         // 创建script标签
         const script = document.createElement('script');
-        script.src = fullUrl;
+        script.src = url;
         
         // 设置超时
         const timeoutId = setTimeout(() => {
@@ -146,11 +137,11 @@
         }, 10000);
         
         // 定义回调函数
-        window[callbackName] = function(response) {
+        window[callbackName] = function(data) {
           clearTimeout(timeoutId);
           document.head.removeChild(script);
           delete window[callbackName];
-          resolve(response);
+          resolve(data);
         };
         
         // 错误处理
@@ -165,16 +156,37 @@
       });
     }
 
+    // 通过CORS POST请求写入AI表格
+    async function writeToAiTable(tableData) {
+      try {
+        const response = await fetch('https://get-config-nltlezcizh.cn-hangzhou.fcapp.run', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            tableData: tableData
+          })
+        });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        return await response.json();
+      } catch (error) {
+        console.error('Fetch error:', error);
+        throw error;
+      }
+    }
+
     // 初始化钉钉配置
     async function initDingtalkConfig() {
       log('🔄 开始初始化钉钉配置...');
       
       try {
         // 使用JSONP获取配置
-        const config = await callBackendWithJsonp('https://get-config-nltlezcizh.cn-hangzhou.fcapp.run', {
-          url: window.location.href
-        });
-        
+        const config = await callBackendWithJsonp();
         log(`✅ 钉钉配置获取成功: agentId=${config.agentId}, corpId=${config.corpId}`);
         
         // 初始化钉钉JSAPI
@@ -223,9 +235,7 @@
       log('🧪 开始JSONP测试后端');
       
       try {
-        const data = await callBackendWithJsonp('https://get-config-nltlezcizh.cn-hangzhou.fcapp.run', {
-          url: window.location.href
-        });
+        const data = await callBackendWithJsonp();
         log(`✅ JSONP测试成功: ${JSON.stringify(data)}`);
         alert('✅ 后端连接成功！');
       } catch (error) {
@@ -257,57 +267,53 @@
       });
     });
 
-   // 在前端代码中，修改写入表格按钮事件：
-
-// 写入表格按钮事件
-document.getElementById('writeTableBtn').addEventListener('click', async function() {
-  if (!scanData) {
-    alert('请先扫描二维码！');
-    return;
-  }
-  
-  const button = this;
-  const originalText = button.textContent;
-  button.disabled = true;
-  button.textContent = '⏳ 写入中...';
-  
-  log('📤 准备写入数据: ' + scanData);
-  
-  try {
-    // 准备写入数据
-    const tableData = {
-      scanContent: scanData,
-      scanDate: new Date().toLocaleDateString(),
-      scanTime: new Date().toLocaleTimeString(),
-      scanDateTime: new Date().toISOString(),
-      operator: dd.env.userName || '钉钉用户',
-      deviceInfo: navigator.userAgent
-    };
-    
-    // 通过JSONP GET请求写入AI表格
-    const result = await callBackendWithJsonp('https://get-config-nltlezcizh.cn-hangzhou.fcapp.run', {
-      operation: 'write',
-      data: JSON.stringify(tableData)
+    // 写入表格按钮事件
+    document.getElementById('writeTableBtn').addEventListener('click', async function() {
+      if (!scanData) {
+        alert('请先扫描二维码！');
+        return;
+      }
+      
+      const button = this;
+      const originalText = button.textContent;
+      button.disabled = true;
+      button.textContent = '⏳ 写入中...';
+      
+      log('📤 准备写入数据: ' + scanData);
+      
+      try {
+        // 准备写入数据
+        const tableData = {
+          scanContent: scanData,
+          scanDate: new Date().toLocaleDateString(),
+          scanTime: new Date().toLocaleTimeString(),
+          scanDateTime: new Date().toISOString(),
+          operator: '钉钉用户',
+          deviceInfo: navigator.userAgent
+        };
+        
+        // 通过CORS POST请求写入AI表格
+        const result = await writeToAiTable(tableData);
+        log('✅ 数据写入完成: ' + JSON.stringify(result));
+        button.textContent = '✅ 已写入';
+        button.style.background = '#52c41a';
+        
+        setTimeout(() => {
+          button.textContent = originalText;
+          button.disabled = false;
+          button.style.background = '';
+        }, 3000);
+      } catch (error) {
+        log('❌ 写入失败: ' + error.message);
+        button.disabled = false;
+        button.textContent = originalText;
+        alert('写入失败: ' + error.message);
+      }
     });
-    
-    log('✅ 数据写入完成: ' + JSON.stringify(result));
-    button.textContent = '✅ 已写入';
-    button.style.background = '#52c41a';
-    
-    setTimeout(() => {
-      button.textContent = originalText;
-      button.disabled = false;
-      button.style.background = '';
-    }, 3000);
-  } catch (error) {
-    log('❌ 写入失败: ' + error.message);
-    button.disabled = false;
-    button.textContent = originalText;
-    alert('写入失败: ' + error.message);
-  }
-});
 
   </script>
 </body>
 </html>
+
+
 
