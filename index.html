@@ -257,51 +257,57 @@
       });
     });
 
-    // 写入表格按钮事件
-    document.getElementById('writeTableBtn').addEventListener('click', async function() {
-      if (!scanData) {
-        alert('请先扫描二维码！');
-        return;
-      }
-      
-      const button = this;
-      const originalText = button.textContent;
-      button.disabled = true;
-      button.textContent = '⏳ 写入中...';
-      
-      log('📤 准备写入数据: ' + scanData);
-      
-      try {
-        // 准备写入数据
-        const tableData = {
-          scanContent: scanData,
-          scanDate: new Date().toLocaleDateString(),
-          scanTime: new Date().toLocaleTimeString(),
-          scanDateTime: new Date().toISOString(),
-          operator: '钉钉用户',
-          deviceInfo: navigator.userAgent
-        };
-        
-        // 通过JSONP GET请求写入AI表格
-        const result = await callBackendWithJsonp('https://get-config-nltlezcizh.cn-hangzhou.fcapp.run/write', tableData);
-        
-        log('✅ 数据写入完成: ' + JSON.stringify(result));
-        button.textContent = '✅ 已写入';
-        button.style.background = '#52c41a';
-        
-        setTimeout(() => {
-          button.textContent = originalText;
-          button.disabled = false;
-          button.style.background = '';
-        }, 3000);
-      } catch (error) {
-        log('❌ 写入失败: ' + error.message);
-        button.disabled = false;
-        button.textContent = originalText;
-        alert('写入失败: ' + error.message);
-      }
+   // 在前端代码中，修改写入表格按钮事件：
+
+// 写入表格按钮事件
+document.getElementById('writeTableBtn').addEventListener('click', async function() {
+  if (!scanData) {
+    alert('请先扫描二维码！');
+    return;
+  }
+  
+  const button = this;
+  const originalText = button.textContent;
+  button.disabled = true;
+  button.textContent = '⏳ 写入中...';
+  
+  log('📤 准备写入数据: ' + scanData);
+  
+  try {
+    // 准备写入数据
+    const tableData = {
+      scanContent: scanData,
+      scanDate: new Date().toLocaleDateString(),
+      scanTime: new Date().toLocaleTimeString(),
+      scanDateTime: new Date().toISOString(),
+      operator: dd.env.userName || '钉钉用户',
+      deviceInfo: navigator.userAgent
+    };
+    
+    // 通过JSONP GET请求写入AI表格
+    const result = await callBackendWithJsonp('https://get-config-nltlezcizh.cn-hangzhou.fcapp.run', {
+      operation: 'write',
+      data: JSON.stringify(tableData)
     });
+    
+    log('✅ 数据写入完成: ' + JSON.stringify(result));
+    button.textContent = '✅ 已写入';
+    button.style.background = '#52c41a';
+    
+    setTimeout(() => {
+      button.textContent = originalText;
+      button.disabled = false;
+      button.style.background = '';
+    }, 3000);
+  } catch (error) {
+    log('❌ 写入失败: ' + error.message);
+    button.disabled = false;
+    button.textContent = originalText;
+    alert('写入失败: ' + error.message);
+  }
+});
 
   </script>
 </body>
 </html>
+
