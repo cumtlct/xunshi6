@@ -2,135 +2,252 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>二维码扫描 & AI表格写入</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>扫码写入AI表格</title>
   <style>
-    /* 样式与之前一致，省略重复代码 */
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 20px; background: #f5f5f5; color: #333; line-height: 1.5; }
-    .container { max-width: 600px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-    h1 { text-align: center; color: #1890ff; margin-bottom: 20px; }
-    .status-card { margin: 20px 0; padding: 15px; border-left: 4px solid #1890ff; border-radius: 6px; background: #f9f9f9; }
-    .status-card.success { border-left-color: #52c41a; background: #f6ffed; }
-    .status-card.error { border-left-color: #ff4d4f; background: #fff2f0; }
-    button { width: 100%; padding: 14px; font-size: 18px; border: none; border-radius: 6px; cursor: pointer; margin: 10px 0; color: white; }
+    body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; padding: 15px; background: #f5f5f5; color: #333; }
+    .container { max-width: 500px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    h1 { text-align: center; color: #1890ff; font-size: 1.5rem; margin-bottom: 20px; }
+    .status-card { margin: 15px 0; padding: 12px; border-radius: 6px; font-size: 0.9rem; line-height: 1.6; }
+    .status-normal { border-left: 4px solid #1890ff; background: #f0f7ff; }
+    .status-success { border-left: 4px solid #52c41a; background: #f6ffed; }
+    .status-warning { border-left: 4px solid #faad14; background: #fffbe6; }
+    .status-error { border-left: 4px solid #ff4d4f; background: #fff2f0; }
+    button { width: 100%; padding: 12px; font-size: 1rem; border: none; border-radius: 6px; color: white; margin: 8px 0; cursor: pointer; }
+    button.primary { background: #1890ff; }
     button.success { background: #52c41a; }
+    button.test { background: #722ed1; }
     button:disabled { background: #ccc; cursor: not-allowed; }
-    .log { margin-top: 20px; padding: 15px; background: #f0f0f0; font-family: 'Courier New', monospace; white-space: pre-wrap; border-radius: 6px; max-height: 300px; overflow-y: auto; font-size: 14px; }
+    .log-container { margin-top: 15px; }
+    .log-title { font-weight: bold; margin-bottom: 8px; font-size: 0.9rem; }
+    .log { background: #f0f0f0; padding: 10px; border-radius: 6px; font-size: 0.8rem; height: 200px; overflow-y: auto; font-family: monospace; white-space: pre-wrap; }
+    .tips { font-size: 0.8rem; color: #666; margin-top: 5px; text-align: center; }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1>二维码扫描 & AI表格写入</h1>
-    <div class="status-card" id="initStatus">🔄 初始化中...</div>
-    <button id="scanBtn" disabled>📷 扫描二维码</button>
-    <div id="scanResult" class="status-card" style="display:none;"></div>
-    <button id="writeTableBtn" disabled class="success">📊 写入 AI 表格</button>
-    <button id="testJsonpBtn" style="background: #722ed1;">🧪 JSONP测试后端</button>
-    <div><strong>操作日志</strong></div>
-    <div class="log" id="log"></div>
+    <h1>扫码写入AI表格</h1>
+    
+    <!-- 初始化状态卡片 -->
+    <div class="status-card status-normal" id="initStatus">
+      🔄 初始化中...
+    </div>
+    
+    <!-- 扫码区域 -->
+    <button id="scanBtn" class="primary" disabled>
+      📷 扫描二维码
+    </button>
+    <div id="scanResult" class="status-card" style="display: none;"></div>
+    
+    <!-- 写入按钮 -->
+    <button id="writeTableBtn" class="success" disabled>
+      📊 写入AI表格
+    </button>
+    <div class="tips">提示：扫码后可点击写入</div>
+    
+    <!-- 测试按钮 -->
+    <button id="testJsonpBtn" class="test">
+      🧪 测试后端连接
+    </button>
+    
+    <!-- 日志区域（手机调试核心） -->
+    <div class="log-container">
+      <div class="log-title">操作日志（点击可复制）</div>
+      <div class="log" id="log" onclick="copyLog()">
+        <!-- 日志将显示在这里 -->
+      </div>
+    </div>
   </div>
 
+  <!-- 钉钉JSAPI -->
   <script src="https://g.alicdn.com/dingding/dingtalk-jsapi/2.13.42/dingtalk.open.js"></script>
-  <script>
-    // 全局变量：新增operatorId（操作人unionId）存储
-    let scanData = null;
-    let operatorId = null; // 关键：存储当前用户unionId
-    const BACKEND_URL = 'https://get-config-nltlezcizh.cn-hangzhou.fcapp.run';
 
-    // 日志工具函数
+  <script>
+    // 全局变量
+    let scanData = null;
+    let operatorId = null; // 用户标识（unionId或userId）
+    const BACKEND_URL = 'https://get-config-nltlezcizh.cn-hangzhou.fcapp.run'; // 替换为你的后端地址
+
+    // ==============================
+    // 1. 日志工具（手机端可视化）
+    // ==============================
     function log(msg) {
-      const line = `[${new Date().toLocaleTimeString()}] ${msg}`;
-      document.getElementById('log').textContent += line + '\n';
-      document.getElementById('log').scrollTop = document.getElementById('log').scrollHeight;
-      console.log(line);
+      const logEl = document.getElementById('log');
+      const time = new Date().toLocaleTimeString(); // 只显示时间（节省空间）
+      const line = `[${time}] ${msg}\n`;
+      logEl.textContent += line;
+      logEl.scrollTop = logEl.scrollHeight; // 自动滚动到底部
+      console.log(line); // 同时输出到调试工具（若有）
     }
 
-    // 1. JSONP获取钉钉配置（不变）
+    // 复制日志到剪贴板（手机端方便分享）
+    function copyLog() {
+      const logEl = document.getElementById('log');
+      dd.device.notification.confirm({
+        message: `是否复制日志？（共${logEl.textContent.length}字符）`,
+        title: '提示',
+        buttonLabels: ['取消', '复制'],
+        onSuccess: function(result) {
+          if (result.buttonIndex === 1) { // 点击"复制"
+            const textarea = document.createElement('textarea');
+            textarea.value = logEl.textContent;
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textarea);
+            dd.device.notification.alert({ message: '日志已复制到剪贴板', title: '成功' });
+          }
+        }
+      });
+    }
+
+    // ==============================
+    // 2. JSONP获取钉钉配置（基础功能）
+    // ==============================
     function callBackendWithJsonp() {
       return new Promise((resolve, reject) => {
-        const callbackName = 'jsonp_callback_' + Date.now();
+        const callbackName = 'jsonp_cb_' + Date.now();
         const currentUrl = encodeURIComponent(window.location.href.split('#')[0]);
-        const requestUrl = `${BACKEND_URL}?url=${currentUrl}&callback=${callbackName}`;
+        const url = `${BACKEND_URL}?url=${currentUrl}&callback=${callbackName}`;
         
-        log(`📤 JSONP请求: ${requestUrl}`);
+        log(`📤 发起JSONP请求: ${url.slice(0, 50)}...`); // 截断长URL，避免日志过长
+        
         const script = document.createElement('script');
-        script.src = requestUrl;
+        script.src = url;
+        script.onerror = () => reject(new Error('JSONP请求失败（网络或跨域问题）'));
         
-        const timeoutTimer = setTimeout(() => {
-          reject(new Error('JSONP请求超时'));
+        // 超时处理（8秒，手机网络较慢）
+        const timeout = setTimeout(() => {
+          reject(new Error('JSONP请求超时（8秒未响应）'));
           cleanUp();
-        }, 10000);
-
+        }, 8000);
+        
+        // 回调函数
         window[callbackName] = function(data) {
-          clearTimeout(timeoutTimer);
+          clearTimeout(timeout);
           cleanUp();
-          data.error ? reject(new Error(`后端错误: ${data.message}`)) : resolve(data);
+          if (data.error) reject(new Error(`后端错误: ${data.error}`));
+          else resolve(data);
         };
-
-        script.onerror = () => { reject(new Error('JSONP加载失败')); cleanUp(); };
-        function cleanUp() { document.head.removeChild(script); delete window[callbackName]; }
+        
+        function cleanUp() {
+          document.head.removeChild(script);
+          delete window[callbackName];
+        }
+        
         document.head.appendChild(script);
       });
     }
 
-    // 2. 关键修正：获取当前用户unionId（operatorId）
-    function getCurrentUserUnionId() {
+    // ==============================
+    // 3. 获取用户标识（核心修复：兼容unionId和userId）
+    // ==============================
+    function getUserIdentifier() {
       return new Promise((resolve, reject) => {
-        log('🔍 开始获取当前用户信息（获取unionId）');
+        log('🔍 开始获取用户信息（兼容unionId和userId）');
         dd.biz.user.get({
+          needAllInfo: true, // 强制获取完整信息
+          forceGetUserInfo: true, // 避免缓存
           onSuccess: function(userInfo) {
-            // 从钉钉API获取unionId（官方推荐唯一标识）
+            // 打印所有可用字段（手机端调试关键）
+            const fields = Object.keys(userInfo).join(', ');
+            log(`📱 获取用户字段: ${fields}`);
+            
+            // 优先用unionId（跨企业唯一）
             if (userInfo.unionid) {
               operatorId = userInfo.unionid;
-              log(`✅ 获取用户unionId成功: ${operatorId}`);
+              log(`✅ 成功获取unionId: ${operatorId.slice(0, 6)}...`); // 隐藏部分字符
               resolve(operatorId);
-            } else {
-              reject(new Error('用户信息中无unionId，请检查微应用权限'));
+            }
+            // 次选用userId（企业内唯一，表格支持）
+            else if (userInfo.userId || userInfo.userid) { // 兼容大小写
+              operatorId = userInfo.userId || userInfo.userid;
+              log(`⚠️ 未获取到unionId，使用userId: ${operatorId.slice(0, 6)}...`);
+              resolve(operatorId);
+            }
+            // 无任何标识（必须处理权限）
+            else {
+              const errMsg = `未获取到用户标识，仅返回字段: ${fields}`;
+              log(`❌ ${errMsg}`);
+              reject(new Error(errMsg + '（请检查微应用权限）'));
             }
           },
           onFail: function(err) {
-            reject(new Error(`获取用户信息失败: ${err.message}`));
+            const errMsg = `接口调用失败: 错误码=${err.errCode}，信息=${err.message}`;
+            log(`❌ ${errMsg}`);
+            // 常见错误码提示（手机端友好）
+            if (err.errCode === 60121) {
+              reject(new Error('用户不在应用可见范围内，请联系管理员添加'));
+            } else if (err.errCode === 403) {
+              reject(new Error('缺少用户信息权限，请管理员在开放平台开通'));
+            } else {
+              reject(new Error(errMsg));
+            }
           }
         });
       });
     }
 
-    // 3. 关键修正：POST请求携带operatorId
+    // ==============================
+    // 4. 写入AI表格（确保operatorId传递）
+    // ==============================
     async function writeToAiTable(tableData) {
-      if (!operatorId) throw new Error('未获取到操作人信息（operatorId缺失）');
+      if (!operatorId) {
+        throw new Error('未获取到操作人信息，无法写入表格');
+      }
+      if (!scanData) {
+        throw new Error('请先扫描二维码');
+      }
       
       try {
-        log(`📥 写入数据: ${JSON.stringify(tableData)}, operatorId: ${operatorId}`);
-        const response = await fetch(
-          // 拼接operatorId到Query参数（官方必选）
-          `${BACKEND_URL}?operatorId=${encodeURIComponent(operatorId)}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ tableData }),
-            credentials: 'omit'
-          }
-        );
-
-        const responseText = await response.text();
-        if (!response.ok) throw new Error(`HTTP ${response.status}: ${responseText.slice(0, 200)}`);
+        // 拼接operatorId到请求参数（后端必需）
+        const fullUrl = `${BACKEND_URL}?operatorId=${encodeURIComponent(operatorId)}`;
+        log(`📥 发起写入请求: ${fullUrl.slice(0, 50)}...`);
         
-        let result = JSON.parse(responseText);
-        if (!result.success) throw new Error(`业务错误: ${result.error}`);
+        const response = await fetch(fullUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tableData }),
+          credentials: 'omit' // 禁用cookie，避免跨域问题
+        });
+        
+        // 读取响应内容（无论成功失败，都显示在日志）
+        const responseText = await response.text();
+        log(`📥 后端响应 [${response.status}]: ${responseText.slice(0, 100)}...`);
+        
+        // 处理HTTP错误
+        if (!response.ok) {
+          throw new Error(`服务器错误 [${response.status}]: ${responseText.slice(0, 50)}`);
+        }
+        
+        // 解析JSON响应
+        const result = JSON.parse(responseText);
+        if (!result.success) {
+          throw new Error(`写入失败: ${result.error || '未知错误'}`);
+        }
+        
         return result;
       } catch (error) {
-        log(`⚠️ 写入失败: ${error.message}`);
+        log(`⚠️ 写入过程出错: ${error.message}`);
         throw error;
       }
     }
 
-    // 4. 初始化：新增用户信息获取步骤
-    async function initDingtalkConfig() {
-      const initStatusEl = document.getElementById('initStatus');
+    // ==============================
+    // 5. 初始化流程（分步骤提示）
+    // ==============================
+    async function init() {
+      const initStatus = document.getElementById('initStatus');
+      initStatus.textContent = '🔄 正在初始化钉钉环境...';
+      
       try {
-        // 步骤1：获取钉钉配置
+        // 步骤1: 获取钉钉配置
+        initStatus.textContent = '🔄 正在获取钉钉配置...';
         const dingConfig = await callBackendWithJsonp();
-        // 步骤2：初始化钉钉JSAPI（新增user.get权限）
+        log(`✅ 钉钉配置获取成功: corpId=${dingConfig.corpId.slice(0, 6)}...`);
+        
+        // 步骤2: 初始化JSAPI
+        initStatus.textContent = '🔄 正在初始化扫码功能...';
         dd.config({
           agentId: dingConfig.agentId,
           corpId: dingConfig.corpId,
@@ -138,110 +255,142 @@
           nonceStr: dingConfig.nonceStr,
           signature: dingConfig.signature,
           jsApiList: [
-            'biz.util.scan', 
-            'device.notification.alert',
-            'biz.user.get' // 关键：新增获取用户信息的JSAPI权限
+            'biz.util.scan',          // 扫码
+            'device.notification.alert', // 弹窗
+            'device.notification.confirm', // 确认框
+            'biz.user.get'            // 获取用户信息
           ]
         });
-
-        dd.ready(async () => {
-          try {
-            // 步骤3：获取当前用户unionId（初始化时提前获取，避免写入时缺失）
-            await getCurrentUserUnionId();
-            initStatusEl.className = 'status-card success';
-            initStatusEl.innerHTML = '✅ 钉钉环境正常<br>✅ 用户信息已获取<br>✅ 扫码功能就绪';
-            document.getElementById('scanBtn').disabled = false;
-          } catch (userErr) {
-            initStatusEl.className = 'status-card error';
-            initStatusEl.innerHTML = `⚠️ 初始化警告<br>原因: ${userErr.message}<br>（仍可扫码，但无法写入表格）`;
-            document.getElementById('scanBtn').disabled = false;
-          }
+        
+        // 步骤3: 等待JSAPI就绪
+        await new Promise((resolve, reject) => {
+          dd.ready(resolve);
+          dd.error((err) => reject(new Error(`JSAPI初始化失败: ${JSON.stringify(err)}`)));
         });
-
-        dd.error((err) => {
-          initStatusEl.className = 'status-card error';
-          initStatusEl.innerHTML = `❌ 钉钉初始化失败: ${JSON.stringify(err).slice(0, 150)}`;
-        });
+        log('✅ 钉钉JSAPI初始化成功');
+        
+        // 步骤4: 获取用户标识（容错处理）
+        initStatus.className = 'status-card status-warning';
+        initStatus.textContent = '🔄 正在获取用户信息...';
+        try {
+          await getUserIdentifier();
+          initStatus.className = 'status-card status-success';
+          initStatus.textContent = '✅ 初始化完成，可扫码';
+          document.getElementById('scanBtn').disabled = false;
+        } catch (userErr) {
+          // 用户信息获取失败，但仍允许扫码（仅写入受影响）
+          initStatus.className = 'status-card status-warning';
+          initStatus.textContent = `⚠️ 初始化警告: ${userErr.message}\n（可扫码，但无法写入）`;
+          document.getElementById('scanBtn').disabled = false; // 允许扫码
+          log(`⚠️ 用户信息获取失败，但继续运行: ${userErr.message}`);
+        }
+        
       } catch (error) {
-        initStatusEl.className = 'status-card error';
-        initStatusEl.innerHTML = `❌ 初始化失败: ${error.message}`;
+        initStatus.className = 'status-card status-error';
+        initStatus.textContent = `❌ 初始化失败: ${error.message}`;
+        log(`❌ 初始化总错误: ${error.message}`);
+        dd.device.notification.alert({
+          message: `初始化失败: ${error.message}`,
+          title: '错误'
+        });
       }
     }
 
-    // 页面加载 & 按钮事件（扫码、写入逻辑不变，仅写入时携带tableData）
+    // ==============================
+    // 6. 按钮事件（手机端交互）
+    // ==============================
     document.addEventListener('DOMContentLoaded', function() {
-      log('📄 页面加载完成');
-      initDingtalkConfig();
+      log('📱 页面加载完成，开始初始化');
+      init(); // 启动初始化流程
 
       // 扫码按钮
       document.getElementById('scanBtn').addEventListener('click', function() {
+        log('📲 点击扫码按钮');
         dd.biz.util.scan({
           type: 'qrCode',
-          onSuccess: (data) => {
+          showMenu: true, // 显示右上角菜单（手机端实用）
+          onSuccess: function(data) {
             scanData = data.text.trim();
             const resultEl = document.getElementById('scanResult');
-            resultEl.className = 'status-card success';
-            resultEl.innerHTML = `<strong>扫码结果：</strong><br>${scanData}`;
+            resultEl.className = 'status-card status-success';
+            resultEl.innerHTML = `<strong>扫码结果:</strong><br>${scanData}<br><small>（可点击写入表格）</small>`;
             resultEl.style.display = 'block';
             document.getElementById('writeTableBtn').disabled = false;
+            log(`✅ 扫码成功，内容长度: ${scanData.length}`);
           },
-          onFail: (err) => alert(`扫码失败：${err.message}`)
+          onFail: function(err) {
+            const errMsg = `扫码失败: ${err.message}（错误码: ${err.errCode}）`;
+            log(`❌ ${errMsg}`);
+            dd.device.notification.alert({ message: errMsg, title: '扫码失败' });
+          }
         });
       });
 
       // 写入按钮
       document.getElementById('writeTableBtn').addEventListener('click', async function() {
-        if (!scanData) { alert('请先扫描二维码！'); return; }
         const btn = this;
         btn.disabled = true;
         btn.textContent = '⏳ 写入中...';
-
+        
         try {
+          // 构造表格数据（字段名与表格严格一致）
           const tableData = {
             scanContent: scanData,
             scanDate: new Date().toLocaleDateString(),
             scanTime: new Date().toLocaleTimeString(),
             scanDateTime: new Date().toISOString(),
-            operator: '钉钉用户',
-            deviceInfo: navigator.userAgent.slice(0, 100)
+            operator: operatorId || '未知用户', // 显示用户标识
+            deviceInfo: `钉钉APP(${dd.env.platform})` // 简化设备信息（手机端友好）
           };
+          
           const result = await writeToAiTable(tableData);
           btn.textContent = '✅ 写入成功';
           btn.style.background = '#52c41a';
+          log(`🎉 写入成功，记录ID: ${result.recordId}`);
           dd.device.notification.alert({
-            message: `✅ 写入成功！记录ID：${result.recordId}`,
-            title: '成功',
-            buttonName: '确定'
+            message: `写入成功！记录ID: ${result.recordId.slice(0, 6)}...`,
+            title: '成功'
           });
         } catch (error) {
           btn.textContent = '❌ 写入失败';
           btn.style.background = '#ff4d4f';
+          log(`❌ 写入失败: ${error.message}`);
           dd.device.notification.alert({
-            message: `❌ 写入失败：${error.message}`,
-            title: '失败',
-            buttonName: '确定'
+            message: `写入失败: ${error.message}`,
+            title: '失败'
           });
         } finally {
+          // 3秒后恢复按钮状态
           setTimeout(() => {
-            btn.textContent = '📊 写入 AI 表格';
+            btn.textContent = '📊 写入AI表格';
             btn.style.background = '';
             btn.disabled = false;
           }, 3000);
         }
       });
 
-      // JSONP测试按钮（不变）
+      // 测试按钮
       document.getElementById('testJsonpBtn').addEventListener('click', async function() {
-        this.disabled = true;
-        this.textContent = '🧪 测试中...';
+        const btn = this;
+        btn.disabled = true;
+        btn.textContent = '🧪 测试中...';
+        
         try {
           const data = await callBackendWithJsonp();
-          alert(`✅ 测试成功：\ncorpId=${data.corpId}\nagentId=${data.agentId}`);
-        } catch (err) {
-          alert(`❌ 测试失败：${err.message}`);
+          log(`✅ 后端测试成功: corpId=${data.corpId.slice(0, 6)}...`);
+          dd.device.notification.alert({
+            message: `测试成功！\ncorpId: ${data.corpId.slice(0, 6)}...\nagentId: ${data.agentId}`,
+            title: '测试结果'
+          });
+        } catch (error) {
+          log(`❌ 后端测试失败: ${error.message}`);
+          dd.device.notification.alert({
+            message: `测试失败: ${error.message}`,
+            title: '测试结果'
+          });
         } finally {
-          this.disabled = false;
-          this.textContent = '🧪 JSONP测试后端';
+          btn.disabled = false;
+          btn.textContent = '🧪 测试后端连接';
         }
       });
     });
