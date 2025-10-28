@@ -96,6 +96,41 @@
     </div>
   </div>
 
+<!-- 在现有按钮后面添加这个测试按钮 -->
+<button id="testBackendBtn" style="background: #722ed1;">
+    🧪 测试后端服务
+</button>
+
+// 添加后端测试功能
+document.getElementById('testBackendBtn').addEventListener('click', async function() {
+    log('🧪 开始测试后端服务');
+    
+    try {
+        const testUrl = 'https://get-config-nltlezcizh.cn-hangzhou.fcapp.run?url=' + 
+                       encodeURIComponent(window.location.href);
+        
+        log(`📤 请求: ${testUrl}`);
+        
+        const response = await fetch(testUrl);
+        log(`📥 响应状态: ${response.status}`);
+        log(`📋 Content-Type: ${response.headers.get('content-type')}`);
+        
+        if (response.ok) {
+            const data = await response.json();
+            log(`✅ 后端正常: ${JSON.stringify(data)}`);
+            alert('✅ 后端服务正常！');
+        } else {
+            const text = await response.text();
+            log(`❌ 后端错误: ${text.substring(0, 100)}`);
+            alert('❌ 后端返回错误状态');
+        }
+    } catch (error) {
+        log(`💥 测试失败: ${error.message}`);
+        alert('❌ 后端连接失败');
+    }
+});
+
+  
   <script src="https://g.alicdn.com/dingding/dingtalk-jsapi/2.13.42/dingtalk.open.js"></script>
 
   <script>
@@ -189,3 +224,4 @@
   </script>
 </body>
 </html>
+
