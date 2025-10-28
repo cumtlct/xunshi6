@@ -158,21 +158,26 @@
 
     // 通过CORS POST请求写入AI表格
     async function writeToAiTable(tableData) {
-      const response = await fetch('https://get-config-nltlezcizh.cn-hangzhou.fcapp.run', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          tableData: tableData
-        })
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+      try {
+        const response = await fetch('https://get-config-nltlezcizh.cn-hangzhou.fcapp.run', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            tableData: tableData
+          })
+        });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        return await response.json();
+      } catch (error) {
+        console.error('Fetch error:', error);
+        throw error;
       }
-      
-      return await response.json();
     }
 
     // 初始化钉钉配置
