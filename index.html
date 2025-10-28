@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>扫码写入AI表格</title>
   <style>
-    /* 样式与之前一致，确保手机端适配 */
     body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; padding: 15px; background: #f5f5f5; color: #333; }
     .container { max-width: 500px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
     h1 { text-align: center; color: #1890ff; font-size: 1.5rem; margin-bottom: 20px; }
@@ -174,7 +173,7 @@
       const response = await fetch(`${BACKEND_URL}/exchange-userid`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ authCode }),
+        body: JSON.stringify({ action: 'exchange-userid', authCode }), // 明确指定action
         credentials: 'omit'
       });
       const data = await response.json();
@@ -239,20 +238,20 @@
       initStatus.textContent = '🔄 正在初始化钉钉环境...';
       
       try {
-        // 步骤1: 获取钉钉配置（含corpId）
+        // 步骤1: 获取钉钉配置（含corpId和signature）
         initStatus.textContent = '🔄 正在获取钉钉配置...';
         const dingConfig = await callBackendWithJsonp();
         corpId = dingConfig.corpId; // 保存企业ID用于免登
-        log(`✅ 钉钉配置获取成功: corpId=${dingConfig.corpId.slice(0, 6)}...`);
+        log(`✅ 钉钉配置获取成功: corpId=${dingConfig.corpId.slice(0, 6)}..., 包含signature: ${!!dingConfig.signature}`);
         
-        // 步骤2: 初始化JSAPI（仅需基础权限）
+        // 步骤2: 初始化JSAPI（必须包含signature）
         initStatus.textContent = '🔄 正在初始化基础功能...';
         dd.config({
           agentId: dingConfig.agentId,
           corpId: dingConfig.corpId,
           timeStamp: dingConfig.timeStamp,
           nonceStr: dingConfig.nonceStr,
-          signature: dingConfig.signature,
+          signature: dingConfig.signature, // 关键：使用后端返回的signature
           jsApiList: [
             'biz.util.scan',          // 扫码
             'device.notification.alert', // 弹窗
@@ -263,8 +262,14 @@
         
         // 步骤3: 等待JSAPI就绪
         await new Promise((resolve, reject) => {
-          dd.ready(resolve);
-          dd.error((err) => reject(new Error(`JSAPI初始化失败: ${JSON.stringify(err)}`)));
+          dd.ready(() => {
+            log('✅ dd.ready 回调触发，JSAPI初始化完成');
+            resolve();
+          });
+          dd.error((err) => {
+            const errMsg = `JSAPI初始化失败: 错误码=${err.errorCode}, 信息=${err.errorMessage}`;
+            reject(new Error(errMsg));
+          });
         });
         log('✅ 钉钉JSAPI初始化成功');
         
@@ -374,14 +379,14 @@
       // 测试按钮
       document.getElementById('testJsonpBtn').addEventListener('click', async function() {
         const btn = this;
-        btn.disabled = false;
+        btn.disabled = true;
         btn.textContent = '🧪 测试中...';
         
         try {
           const data = await callBackendWithJsonp();
-          log(`✅ 后端测试成功: corpId=${data.corpId.slice(0, 6)}...`);
+          log(`✅ 后端测试成功: corpId=${data.corpId.slice(0, 6)}..., 包含signature: ${!!data.signature}`);
           dd.device.notification.alert({
-            message: `测试成功！\ncorpId: ${data.corpId.slice(0, 6)}...\nagentId: ${data.agentId}`,
+            message: `测试成功！\ncorpId: ${data.corpId.slice(0, 6)}...\n是否有signature: ${!!data.signature}`,
             title: '测试结果'
           });
         } catch (error) {
