@@ -5,315 +5,246 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>二维码扫描 & AI表格写入</title>
   <style>
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      padding: 20px;
-      background-color: #f5f5f5;
-      color: #333;
-      line-height: 1.5;
-    }
-    .container {
-      max-width: 600px;
-      margin: 0 auto;
-      background: white;
-      padding: 20px;
-      border-radius: 10px;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-    }
-    h1 {
-      text-align: center;
-      color: #1890ff;
-      margin-bottom: 20px;
-    }
-    .status-card {
-      margin: 20px 0;
-      padding: 15px;
-      background: #f9f9f9;
-      border-left: 4px solid #1890ff;
-      border-radius: 6px;
-    }
-    .status-card.success {
-      border-left-color: #52c41a;
-      background: #f6ffed;
-    }
-    button {
-      display: block;
-      width: 100%;
-      padding: 14px;
-      font-size: 18px;
-      background: #1890ff;
-      color: white;
-      border: none;
-      border-radius: 6px;
-      cursor: pointer;
-      margin: 10px 0;
-    }
-    button.success {
-      background: #52c41a;
-    }
-    .log {
-      margin-top: 20px;
-      padding: 15px;
-      background: #f0f0f0;
-      font-family: 'Courier New', monospace;
-      white-space: pre-wrap;
-      border-radius: 6px;
-      max-height: 300px;
-      overflow-y: auto;
-      font-size: 14px;
-    }
+    /* 样式与之前一致，省略重复代码 */
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 20px; background: #f5f5f5; color: #333; line-height: 1.5; }
+    .container { max-width: 600px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+    h1 { text-align: center; color: #1890ff; margin-bottom: 20px; }
+    .status-card { margin: 20px 0; padding: 15px; border-left: 4px solid #1890ff; border-radius: 6px; background: #f9f9f9; }
+    .status-card.success { border-left-color: #52c41a; background: #f6ffed; }
+    .status-card.error { border-left-color: #ff4d4f; background: #fff2f0; }
+    button { width: 100%; padding: 14px; font-size: 18px; border: none; border-radius: 6px; cursor: pointer; margin: 10px 0; color: white; }
+    button.success { background: #52c41a; }
+    button:disabled { background: #ccc; cursor: not-allowed; }
+    .log { margin-top: 20px; padding: 15px; background: #f0f0f0; font-family: 'Courier New', monospace; white-space: pre-wrap; border-radius: 6px; max-height: 300px; overflow-y: auto; font-size: 14px; }
   </style>
 </head>
 <body>
   <div class="container">
     <h1>二维码扫描 & AI表格写入</h1>
-    
-    <div class="status-card success">
-      ✅ 钉钉环境检测正常<br>
-      ✅ 扫码功能已验证正常<br>
-      🔄 使用JSONP获取配置，CORS写入数据
-    </div>
-    
-    <div>
-      <button id="scanBtn">
-        📷 扫描二维码
-      </button>
-      <div id="scanResult" class="status-card" style="display:none;">
-        <!-- 扫码结果将显示在这里 -->
-      </div>
-    </div>
-    
-    <div>
-      <button id="writeTableBtn" disabled class="success">
-        📊 写入 AI 表格
-      </button>
-    </div>
-
-    <div>
-      <button id="testJsonpBtn" style="background: #722ed1;">
-        🧪 JSONP测试后端
-      </button>
-    </div>
-    
-    <div>
-      <div><strong>操作日志</strong></div>
-      <div class="log" id="log"></div>
-    </div>
+    <div class="status-card" id="initStatus">🔄 初始化中...</div>
+    <button id="scanBtn" disabled>📷 扫描二维码</button>
+    <div id="scanResult" class="status-card" style="display:none;"></div>
+    <button id="writeTableBtn" disabled class="success">📊 写入 AI 表格</button>
+    <button id="testJsonpBtn" style="background: #722ed1;">🧪 JSONP测试后端</button>
+    <div><strong>操作日志</strong></div>
+    <div class="log" id="log"></div>
   </div>
 
   <script src="https://g.alicdn.com/dingding/dingtalk-jsapi/2.13.42/dingtalk.open.js"></script>
-
   <script>
-    // 工具函数
+    // 全局变量：新增operatorId（操作人unionId）存储
+    let scanData = null;
+    let operatorId = null; // 关键：存储当前用户unionId
+    const BACKEND_URL = 'https://get-config-nltlezcizh.cn-hangzhou.fcapp.run';
+
+    // 日志工具函数
     function log(msg) {
-      const logEl = document.getElementById('log');
       const line = `[${new Date().toLocaleTimeString()}] ${msg}`;
-      logEl.textContent += line + '\n';
-      logEl.scrollTop = logEl.scrollHeight;
+      document.getElementById('log').textContent += line + '\n';
+      document.getElementById('log').scrollTop = document.getElementById('log').scrollHeight;
       console.log(line);
     }
 
-    let scanData = null;
-
-    // JSONP方式调用后端获取配置
+    // 1. JSONP获取钉钉配置（不变）
     function callBackendWithJsonp() {
       return new Promise((resolve, reject) => {
         const callbackName = 'jsonp_callback_' + Date.now();
-        const url = 'https://get-config-nltlezcizh.cn-hangzhou.fcapp.run?url=' + 
-                   encodeURIComponent(window.location.href) + 
-                   '&callback=' + callbackName;
+        const currentUrl = encodeURIComponent(window.location.href.split('#')[0]);
+        const requestUrl = `${BACKEND_URL}?url=${currentUrl}&callback=${callbackName}`;
         
-        log(`📤 JSONP请求: ${url}`);
-        
-        // 创建script标签
+        log(`📤 JSONP请求: ${requestUrl}`);
         const script = document.createElement('script');
-        script.src = url;
+        script.src = requestUrl;
         
-        // 设置超时
-        const timeoutId = setTimeout(() => {
+        const timeoutTimer = setTimeout(() => {
           reject(new Error('JSONP请求超时'));
-          document.head.removeChild(script);
-          delete window[callbackName];
+          cleanUp();
         }, 10000);
-        
-        // 定义回调函数
+
         window[callbackName] = function(data) {
-          clearTimeout(timeoutId);
-          document.head.removeChild(script);
-          delete window[callbackName];
-          resolve(data);
+          clearTimeout(timeoutTimer);
+          cleanUp();
+          data.error ? reject(new Error(`后端错误: ${data.message}`)) : resolve(data);
         };
-        
-        // 错误处理
-        script.onerror = function() {
-          clearTimeout(timeoutId);
-          document.head.removeChild(script);
-          delete window[callbackName];
-          reject(new Error('JSONP请求失败'));
-        };
-        
+
+        script.onerror = () => { reject(new Error('JSONP加载失败')); cleanUp(); };
+        function cleanUp() { document.head.removeChild(script); delete window[callbackName]; }
         document.head.appendChild(script);
       });
     }
 
-    // 通过CORS POST请求写入AI表格
-    async function writeToAiTable(tableData) {
-      try {
-        const response = await fetch('https://get-config-nltlezcizh.cn-hangzhou.fcapp.run', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
+    // 2. 关键修正：获取当前用户unionId（operatorId）
+    function getCurrentUserUnionId() {
+      return new Promise((resolve, reject) => {
+        log('🔍 开始获取当前用户信息（获取unionId）');
+        dd.biz.user.get({
+          onSuccess: function(userInfo) {
+            // 从钉钉API获取unionId（官方推荐唯一标识）
+            if (userInfo.unionid) {
+              operatorId = userInfo.unionid;
+              log(`✅ 获取用户unionId成功: ${operatorId}`);
+              resolve(operatorId);
+            } else {
+              reject(new Error('用户信息中无unionId，请检查微应用权限'));
+            }
           },
-          body: JSON.stringify({
-            tableData: tableData
-          })
+          onFail: function(err) {
+            reject(new Error(`获取用户信息失败: ${err.message}`));
+          }
         });
+      });
+    }
+
+    // 3. 关键修正：POST请求携带operatorId
+    async function writeToAiTable(tableData) {
+      if (!operatorId) throw new Error('未获取到操作人信息（operatorId缺失）');
+      
+      try {
+        log(`📥 写入数据: ${JSON.stringify(tableData)}, operatorId: ${operatorId}`);
+        const response = await fetch(
+          // 拼接operatorId到Query参数（官方必选）
+          `${BACKEND_URL}?operatorId=${encodeURIComponent(operatorId)}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tableData }),
+            credentials: 'omit'
+          }
+        );
+
+        const responseText = await response.text();
+        if (!response.ok) throw new Error(`HTTP ${response.status}: ${responseText.slice(0, 200)}`);
         
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        
-        return await response.json();
+        let result = JSON.parse(responseText);
+        if (!result.success) throw new Error(`业务错误: ${result.error}`);
+        return result;
       } catch (error) {
-        console.error('Fetch error:', error);
+        log(`⚠️ 写入失败: ${error.message}`);
         throw error;
       }
     }
 
-    // 初始化钉钉配置
+    // 4. 初始化：新增用户信息获取步骤
     async function initDingtalkConfig() {
-      log('🔄 开始初始化钉钉配置...');
-      
+      const initStatusEl = document.getElementById('initStatus');
       try {
-        // 使用JSONP获取配置
-        const config = await callBackendWithJsonp();
-        log(`✅ 钉钉配置获取成功: agentId=${config.agentId}, corpId=${config.corpId}`);
-        
-        // 初始化钉钉JSAPI
+        // 步骤1：获取钉钉配置
+        const dingConfig = await callBackendWithJsonp();
+        // 步骤2：初始化钉钉JSAPI（新增user.get权限）
         dd.config({
-          agentId: config.agentId,
-          corpId: config.corpId,
-          timeStamp: config.timeStamp,
-          nonceStr: config.nonceStr,
-          signature: config.signature,
+          agentId: dingConfig.agentId,
+          corpId: dingConfig.corpId,
+          timeStamp: dingConfig.timeStamp,
+          nonceStr: dingConfig.nonceStr,
+          signature: dingConfig.signature,
           jsApiList: [
-            'biz.util.scan',
+            'biz.util.scan', 
             'device.notification.alert',
-            'device.notification.confirm',
-            'device.notification.prompt',
-            'biz.ding.create',
-            'biz.util.uploadImage',
-            'biz.util.openLink'
+            'biz.user.get' // 关键：新增获取用户信息的JSAPI权限
           ]
         });
-        
-        dd.ready(() => {
-          log('✅ 钉钉JSAPI初始化成功');
-          document.getElementById('scanBtn').disabled = false;
+
+        dd.ready(async () => {
+          try {
+            // 步骤3：获取当前用户unionId（初始化时提前获取，避免写入时缺失）
+            await getCurrentUserUnionId();
+            initStatusEl.className = 'status-card success';
+            initStatusEl.innerHTML = '✅ 钉钉环境正常<br>✅ 用户信息已获取<br>✅ 扫码功能就绪';
+            document.getElementById('scanBtn').disabled = false;
+          } catch (userErr) {
+            initStatusEl.className = 'status-card error';
+            initStatusEl.innerHTML = `⚠️ 初始化警告<br>原因: ${userErr.message}<br>（仍可扫码，但无法写入表格）`;
+            document.getElementById('scanBtn').disabled = false;
+          }
         });
-        
+
         dd.error((err) => {
-          log(`❌ 钉钉JSAPI初始化失败: ${JSON.stringify(err)}`);
-          alert('钉钉JSAPI初始化失败，请检查配置');
+          initStatusEl.className = 'status-card error';
+          initStatusEl.innerHTML = `❌ 钉钉初始化失败: ${JSON.stringify(err).slice(0, 150)}`;
         });
-        
       } catch (error) {
-        log(`❌ 初始化钉钉配置失败: ${error.message}`);
-        alert('获取钉钉配置失败，请检查网络连接');
+        initStatusEl.className = 'status-card error';
+        initStatusEl.innerHTML = `❌ 初始化失败: ${error.message}`;
       }
     }
 
-    // 页面加载
+    // 页面加载 & 按钮事件（扫码、写入逻辑不变，仅写入时携带tableData）
     document.addEventListener('DOMContentLoaded', function() {
       log('📄 页面加载完成');
-      // 延迟初始化，确保钉钉环境已加载
-      setTimeout(initDingtalkConfig, 500);
-    });
+      initDingtalkConfig();
 
-    // JSONP测试按钮
-    document.getElementById('testJsonpBtn').addEventListener('click', async function() {
-      log('🧪 开始JSONP测试后端');
-      
-      try {
-        const data = await callBackendWithJsonp();
-        log(`✅ JSONP测试成功: ${JSON.stringify(data)}`);
-        alert('✅ 后端连接成功！');
-      } catch (error) {
-        log(`❌ JSONP测试失败: ${error.message}`);
-        alert('❌ 后端连接失败，请检查网络');
-      }
-    });
+      // 扫码按钮
+      document.getElementById('scanBtn').addEventListener('click', function() {
+        dd.biz.util.scan({
+          type: 'qrCode',
+          onSuccess: (data) => {
+            scanData = data.text.trim();
+            const resultEl = document.getElementById('scanResult');
+            resultEl.className = 'status-card success';
+            resultEl.innerHTML = `<strong>扫码结果：</strong><br>${scanData}`;
+            resultEl.style.display = 'block';
+            document.getElementById('writeTableBtn').disabled = false;
+          },
+          onFail: (err) => alert(`扫码失败：${err.message}`)
+        });
+      });
 
-    // 扫描按钮事件
-    document.getElementById('scanBtn').addEventListener('click', function() {
-      log('📲 用户点击"扫描二维码"');
-      
-      dd.biz.util.scan({
-        type: "qrCode",
-        onSuccess: function(data) {
-          log('✅ 扫码成功: ' + data.text);
-          scanData = data.text;
-          
-          const resultEl = document.getElementById('scanResult');
-          resultEl.innerHTML = `<strong>扫码结果：</strong> ${data.text}`;
-          resultEl.style.display = 'block';
-          
-          document.getElementById('writeTableBtn').disabled = false;
-        },
-        onFail: function(err) {
-          log('❌ 扫码失败: ' + JSON.stringify(err));
-          alert('扫码失败，请重试');
+      // 写入按钮
+      document.getElementById('writeTableBtn').addEventListener('click', async function() {
+        if (!scanData) { alert('请先扫描二维码！'); return; }
+        const btn = this;
+        btn.disabled = true;
+        btn.textContent = '⏳ 写入中...';
+
+        try {
+          const tableData = {
+            scanContent: scanData,
+            scanDate: new Date().toLocaleDateString(),
+            scanTime: new Date().toLocaleTimeString(),
+            scanDateTime: new Date().toISOString(),
+            operator: '钉钉用户',
+            deviceInfo: navigator.userAgent.slice(0, 100)
+          };
+          const result = await writeToAiTable(tableData);
+          btn.textContent = '✅ 写入成功';
+          btn.style.background = '#52c41a';
+          dd.device.notification.alert({
+            message: `✅ 写入成功！记录ID：${result.recordId}`,
+            title: '成功',
+            buttonName: '确定'
+          });
+        } catch (error) {
+          btn.textContent = '❌ 写入失败';
+          btn.style.background = '#ff4d4f';
+          dd.device.notification.alert({
+            message: `❌ 写入失败：${error.message}`,
+            title: '失败',
+            buttonName: '确定'
+          });
+        } finally {
+          setTimeout(() => {
+            btn.textContent = '📊 写入 AI 表格';
+            btn.style.background = '';
+            btn.disabled = false;
+          }, 3000);
+        }
+      });
+
+      // JSONP测试按钮（不变）
+      document.getElementById('testJsonpBtn').addEventListener('click', async function() {
+        this.disabled = true;
+        this.textContent = '🧪 测试中...';
+        try {
+          const data = await callBackendWithJsonp();
+          alert(`✅ 测试成功：\ncorpId=${data.corpId}\nagentId=${data.agentId}`);
+        } catch (err) {
+          alert(`❌ 测试失败：${err.message}`);
+        } finally {
+          this.disabled = false;
+          this.textContent = '🧪 JSONP测试后端';
         }
       });
     });
-
-    // 写入表格按钮事件
-    document.getElementById('writeTableBtn').addEventListener('click', async function() {
-      if (!scanData) {
-        alert('请先扫描二维码！');
-        return;
-      }
-      
-      const button = this;
-      const originalText = button.textContent;
-      button.disabled = true;
-      button.textContent = '⏳ 写入中...';
-      
-      log('📤 准备写入数据: ' + scanData);
-      
-      try {
-        // 准备写入数据
-        const tableData = {
-          scanContent: scanData,
-          scanDate: new Date().toLocaleDateString(),
-          scanTime: new Date().toLocaleTimeString(),
-          scanDateTime: new Date().toISOString(),
-          operator: '钉钉用户',
-          deviceInfo: navigator.userAgent
-        };
-        
-        // 通过CORS POST请求写入AI表格
-        const result = await writeToAiTable(tableData);
-        log('✅ 数据写入完成: ' + JSON.stringify(result));
-        button.textContent = '✅ 已写入';
-        button.style.background = '#52c41a';
-        
-        setTimeout(() => {
-          button.textContent = originalText;
-          button.disabled = false;
-          button.style.background = '';
-        }, 3000);
-      } catch (error) {
-        log('❌ 写入失败: ' + error.message);
-        button.disabled = false;
-        button.textContent = originalText;
-        alert('写入失败: ' + error.message);
-      }
-    });
-
   </script>
 </body>
 </html>
-
-
-
