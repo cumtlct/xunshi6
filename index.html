@@ -166,23 +166,39 @@
     }
 
     /**
-     * 步骤2：后端兑换userId
+     * 步骤2：后端兑换userId - 修复为正确的CORS请求
      */
     async function exchangeUserId(authCode) {
       log('🔄 开始兑换userId...');
-      const response = await fetch(`${BACKEND_URL}/exchange-userid`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'exchange-userid', authCode }), // 明确指定action
-        credentials: 'omit'
-      });
-      const data = await response.json();
-      if (!data.success || !data.userId) {
-        throw new Error(`userId兑换失败: ${data.error || '未知错误'}`);
+      try {
+        const response = await fetch(`${BACKEND_URL}/exchange-userid`, {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          body: JSON.stringify({ action: 'exchange-userid', authCode: authCode }),
+          mode: 'cors',
+          credentials: 'omit'
+        });
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`HTTP ${response.status}: ${errorText}`);
+        }
+        
+        const data = await response.json();
+        if (!data.success || !data.userId) {
+          throw new Error(`userId兑换失败: ${data.error || '未知错误'}`);
+        }
+        
+        userId = data.userId;
+        log(`✅ 兑换到userId: ${userId.slice(0, 6)}...`);
+        return userId;
+      } catch (error) {
+        log(`⚠️ userId兑换失败: ${error.message}`);
+        throw error;
       }
-      userId = data.userId;
-      log(`✅ 兑换到userId: ${userId.slice(0, 6)}...`);
-      return userId;
     }
 
     // ==============================
@@ -197,15 +213,17 @@
       }
       
       try {
-        // 拼接userId到请求参数（后端必需）
-        const fullUrl = `${BACKEND_URL}?operatorId=${encodeURIComponent(userId)}`;
-        log(`📥 发起写入请求: ${fullUrl.slice(0, 50)}...`);
+        log(`📥 发起写入请求，使用userId: ${userId.slice(0, 6)}...`);
         
-        const response = await fetch(fullUrl, {
+        const response = await fetch(`${BACKEND_URL}?operatorId=${encodeURIComponent(userId)}`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
           body: JSON.stringify({ tableData }),
-          credentials: 'omit' // 禁用cookie，避免跨域问题
+          mode: 'cors',
+          credentials: 'omit'
         });
         
         // 读取响应内容（无论成功失败，都显示在日志）
@@ -380,7 +398,7 @@
       document.getElementById('testJsonpBtn').addEventListener('click', async function() {
         const btn = this;
         btn.disabled = true;
-        btn.textContent = '🧪 测试中...';
+        btn.textContent = '🧪 测试后端连接...';
         
         try {
           const data = await callBackendWithJsonp();
@@ -404,3 +422,6 @@
   </script>
 </body>
 </html>
+
+
+
