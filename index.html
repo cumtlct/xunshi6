@@ -1,102 +1,151 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <meta charset="utf-8" />
-  <title>扫码录入多维表</title>
-  <!-- 钉钉 JSAPI -->
-  <script src="https://g.alicdn.com/dingding/dingtalk-jsapi/2.20.0/dingtalk.open.js"></script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>扫码提交到多维表</title>
+  <script src="https://g.alicdn.com/dingding/dingtalk-pc-api/2.10.12/index.js"></script>
   <style>
-    body{font-family:PingFang SC;text-align:center;padding:40px;background:#f5f5f5}
-    h3{margin-bottom:30px}
-    button{height:48px;padding:0 32px;font-size:18px;color:#fff;background:#1677ff;border:0;border-radius:6px;cursor:pointer}
-    button:disabled{background:#91caff;cursor:not-allowed}
-    #status{margin-top:20px;font-size:15px;color:#666}
-    .success{color:#52c41a!important}
-    .error{color:#ff4d4f!important}
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto; padding: 20px; }
+    button { padding: 12px 24px; font-size: 16px; margin: 10px 0; }
+    .btn-primary { background: #1890ff; color: white; border: none; border-radius: 4px; cursor: pointer; }
+    .btn-primary:disabled { background: #bfbfbf; cursor: not-allowed; }
+    #result { margin-top: 20px; padding: 10px; background: #f5f5f5; border-radius: 4px; }
   </style>
 </head>
 <body>
-  <h3>扫码自动录入多维表</h3>
-  <button id="scanBtn">开始扫码</button>
-  <div id="status">等待扫码…</div>
+  <h2>扫码并提交数据</h2>
+  <button id="scanBtn" class="btn-primary">点击扫码</button>
+  <div id="result"></div>
 
   <script>
-    /* ==========  ① 改成你的 FC 免登接口  ========== */
-    const USER_API    = 'https://get-config-nltlezcizh.cn-hangzhou.fcapp.run';   // FC 触发器地址
-    /* ==========  ② 改成你的连接流 Webhook  ========== */
-    const WEBHOOK_URL = 'https://connector.dingtalk.com/webhook/flow/0747829f52ccf0469457ffc2';
-    /* ==========  ③ Token（没有就留空）  ========== */
-    const TOKEN       = '';
+    let currentUser = null; // 存储当前用户信息
 
-    const $ = id => document.getElementById(id);
-    const status = (txt, col = '#666') => {
-      $('status').innerText = txt;
-      $('status').className = col === '#52c41a' ? 'success' : (col === '#ff4d4f' ? 'error' : '');
-    };
-
-    /* 扫码 → 免登 → 连接流 */
-    async function submitData(codeContent) {
-      const now = new Date();
-      const body = {
-        content : codeContent,
-        scanTime: `${now.getFullYear()}-${(now.getMonth()+1).toString().padStart(2,0)}-${now.getDate().toString().padStart(2,0)} ${now.getHours().toString().padStart(2,0)}:${now.getMinutes().toString().padStart(2,0)}:${now.getSeconds().toString().padStart(2,0)}`,
-        scanDate: `${now.getFullYear()}-${(now.getMonth()+1).toString().padStart(2,0)}-${now.getDate().toString().padStart(2,0)}`,
-        userId   : '',
-        userName : ''
-      };
-
-      // 1. 免登拿 code
-      status('正在获取用户信息…');
-      const authCode = await new Promise((resolve, reject) =>
+    // 第一步：免登获取用户身份
+    function dingtalkAuth() {
+      return new Promise((resolve, reject) => {
+        const url = encodeURIComponent(window.location.href);
+        // 调用钉钉免登接口
         dd.runtime.permission.requestAuthCode({
-          corpId: _config.corpId,
-          onSuccess: res => resolve(res.code),
-          onFail   : err => reject(err)
-        })
-      );
-
-      // 2. 用 code 换 userid / name
-      const userResp = await fetch(`${USER_API}?code=${authCode}`);
-      const user     = await userResp.json();
-      if (!user.userid) throw new Error(user.msg || '免登失败');
-      body.userId   = user.userid;
-      body.userName = user.name;
-
-      // 3. 发送到连接流
-      status('正在提交…');
-      const rsp = await fetch(WEBHOOK_URL, {
-        method : 'POST',
-        headers: { 'Content-Type': 'application/json', ...(TOKEN ? {Token: TOKEN} : {}) },
-        body   : JSON.stringify(body)
+          corpId: "YOUR_CORP_ID", // 替换为你的企业 corpId（可在管理后台查看）
+          onSuccess: function(info) {
+            // 用 code 换用户信息（需后端！但钉钉 H5 可用 JSAPI 直接获取部分信息）
+            // 实际上，在钉钉容器内，可通过 dd.getEnv 直接拿到用户信息（部分版本支持）
+            // 更可靠方式：调用 dd.getUserInfo（需在可信域名下）
+            getUserInfo().then(resolve).catch(reject);
+          },
+          onFail: function(err) {
+            console.error('免登失败', err);
+            alert('身份验证失败，请在钉钉中打开');
+            reject(err);
+          }
+        });
       });
-      const json = await rsp.json();
-      if (json.success) {
-        status('录入成功！', '#52c41a');
-        setTimeout(() => status('等待扫码…'), 2000);
-      } else {
-        throw new Error(json.message || '提交失败');
-      }
     }
 
-    /* 按钮事件 */
-    $('scanBtn').addEventListener('click', async () => {
-      const btn = $('scanBtn');
-      btn.disabled = true;
-      try {
-        const code = await new Promise((resolve, reject) =>
-          dd.biz.util.scan({ type: 'qrCode', onSuccess: res => resolve(res.text), onFail: err => reject(err) })
-        );
-        status(`扫码结果：${code}`);
-        await submitData(code);
-      } catch (e) {
-        status(e.message || '用户取消或失败', '#ff4d4f');
-      } finally {
-        btn.disabled = false;
-      }
-    });
+    // 第二步：获取用户详细信息（姓名、userid）
+    function getUserInfo() {
+      return new Promise((resolve, reject) => {
+        dd.getUserInfo({
+          onSuccess: function(res) {
+            console.log('用户信息:', res);
+            currentUser = {
+              userid: res.userid,
+              name: res.nick || res.name,
+              avatar: res.avatar
+            };
+            resolve(currentUser);
+          },
+          onFail: function(err) {
+            console.error('获取用户信息失败', err);
+            reject(err);
+          }
+        });
+      });
+    }
 
-    dd.ready(() => console.log('JSAPI ready'));
-    dd.error(err => console.error('JSAPI error', err));
+    // 第三步：调用扫码
+    function startScan() {
+      if (!currentUser) {
+        alert('请先完成身份验证');
+        return;
+      }
+
+      dd.biz.util.scan({
+        type: 'all', // 支持 all / qr / bar
+        onSuccess: function(data) {
+          console.log('扫码结果:', data);
+          const scanContent = data.text;
+
+          // 组装最终提交数据
+          const payload = {
+            content: scanContent,
+            scanTime: new Date().toISOString(), // ISO 8601 格式，多维表兼容性最好
+            scanDate: new Date().toISOString().split('T')[0],
+            operatorName: currentUser.name,
+            operatorId: currentUser.userid
+          };
+
+          // 显示结果（实际项目中这里调用 submitToWebhook(payload)）
+          document.getElementById('result').innerHTML = `
+            <p><strong>扫码内容：</strong>${scanContent}</p>
+            <p><strong>操作人：</strong>${currentUser.name} (${currentUser.userid})</p>
+            <p><strong>时间：</strong>${new Date().toLocaleString()}</p>
+            <button class="btn-primary" onclick="submitToWebhook(${JSON.stringify(payload).replace(/'/g, "\\'")})">
+              提交到多维表
+            </button>
+          `;
+        },
+        onFail: function(err) {
+          console.error('扫码失败', err);
+          alert('扫码失败：' + (err.message || '未知错误'));
+        }
+      });
+    }
+
+    // 第四步：提交到你已创建的 Webhook 连接流
+    function submitToWebhook(payload) {
+      const webhookUrl = 'https://oapi.dingtalk.com/connect/flow/webhook/你的webhook路径'; // ← 替换为你的实际 URL
+
+      // 如果你的连接流设置了 Token 认证，请取消下一行注释并填入 token
+      // const token = 'your_token_here';
+
+      fetch(webhookUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          // ...(token ? { 'X-DingTalk-Token': token } : {})
+        },
+        body: JSON.stringify(payload)
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success || data.code === 0) {
+          alert('✅ 提交成功！数据已写入多维表');
+        } else {
+          alert('❌ 提交失败：' + (data.message || JSON.stringify(data)));
+        }
+      })
+      .catch(err => {
+        console.error('网络错误:', err);
+        alert('网络错误，请检查控制台');
+      });
+    }
+
+    // 页面加载完成后自动初始化
+    document.addEventListener('DOMContentLoaded', function() {
+      // 初始化钉钉 JSAPI
+      dd.ready(function() {
+        console.log('钉钉 JSAPI 已准备就绪');
+        // 自动获取用户身份
+        dingtalkAuth().catch(err => {
+          console.error('初始化失败', err);
+        });
+      });
+
+      // 绑定扫码按钮
+      document.getElementById('scanBtn').addEventListener('click', startScan);
+    });
   </script>
 </body>
 </html>
