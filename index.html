@@ -27,7 +27,7 @@
         const url = encodeURIComponent(window.location.href);
         // 调用钉钉免登接口
         dd.runtime.permission.requestAuthCode({
-          corpId: "YOUR_CORP_ID", // 替换为你的企业 corpId（可在管理后台查看）
+          corpId: "ding7e9dde4f5cecba404ac5d6980864d335", // 替换为你的企业 corpId（可在管理后台查看）
           onSuccess: function(info) {
             // 用 code 换用户信息（需后端！但钉钉 H5 可用 JSAPI 直接获取部分信息）
             // 实际上，在钉钉容器内，可通过 dd.getEnv 直接拿到用户信息（部分版本支持）
@@ -105,7 +105,7 @@
 
     // 第四步：提交到你已创建的 Webhook 连接流
     function submitToWebhook(payload) {
-      const webhookUrl = 'https://oapi.dingtalk.com/connect/flow/webhook/你的webhook路径'; // ← 替换为你的实际 URL
+      const webhookUrl = 'https://connector.dingtalk.com/webhook/flow/0747829f52ccf0469457ffc2'; // ← 替换为你的实际 URL
 
       // 如果你的连接流设置了 Token 认证，请取消下一行注释并填入 token
       // const token = 'your_token_here';
@@ -149,3 +149,4 @@
   </script>
 </body>
 </html>
+
