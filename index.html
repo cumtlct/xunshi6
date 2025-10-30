@@ -1,14 +1,18 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <meta charset="utf-8">
-  <title>扫码入库 2025</title>
+  <meta charset="utf-8" />
+  <title>扫码录入多维表</title>
   <!-- 钉钉 JSAPI -->
   <script src="https://g.alicdn.com/dingding/dingtalk-jsapi/2.20.0/dingtalk.open.js"></script>
   <style>
-    body { font-family: PingFang SC; padding: 20px; text-align: center }
-    button { height: 44px; padding: 0 24px; font-size: 16px }
-    #status { margin-top: 12px; color: #666 }
+    body{font-family:PingFang SC;text-align:center;padding:40px;background:#f5f5f5}
+    h3{margin-bottom:30px}
+    button{height:48px;padding:0 32px;font-size:18px;color:#fff;background:#1677ff;border:0;border-radius:6px;cursor:pointer}
+    button:disabled{background:#91caff;cursor:not-allowed}
+    #status{margin-top:20px;font-size:15px;color:#666}
+    .success{color:#52c41a!important}
+    .error{color:#ff4d4f!important}
   </style>
 </head>
 <body>
@@ -17,90 +21,82 @@
   <div id="status">等待扫码…</div>
 
   <script>
-    /* ====== 1. 配置区 ====== */
-    const WEBHOOK_URL = 'https://connector.dingtalk.com/webhook/flow/0747829f52ccf0469457ffc2';   // 你的地址
-    const TOKEN       = 'abc123';   // 如果你在连接流里配置了 Header-Token
-    /* ======================= */
+    /* ==========  ① 改成你的 FC 免登接口  ========== */
+    const USER_API    = 'https://get-config-nltlezcizh.cn-hangzhou.fcapp.run';   // FC 触发器地址
+    /* ==========  ② 改成你的连接流 Webhook  ========== */
+    const WEBHOOK_URL = 'https://connector.dingtalk.com/webhook/flow/0747829f52ccf0469457ffc2';
+    /* ==========  ③ Token（没有就留空）  ========== */
+    const TOKEN       = '';
 
     const $ = id => document.getElementById(id);
-    const status = (txt,col='#666') => {
+    const status = (txt, col = '#666') => {
       $('status').innerText = txt;
-      $('status').style.color = col;
+      $('status').className = col === '#52c41a' ? 'success' : (col === '#ff4d4f' ? 'error' : '');
     };
 
-    /* ====== 2. 免登获取用户信息 ====== */
-    async function getUserInfo() {
-      return new Promise((resolve,reject)=>{
-        dd.runtime.permission.requestAuthCode({
-          corpId: _config.corpId,   // 稍后钉钉自动注入
-          onSuccess: info => resolve(info.code),   // 临时免登码
-          onFail  : err => reject(err)
-        });
-      });
-    }
-
-    /* ====== 3. 扫码 ====== */
-    async function scan() {
-      return new Promise((resolve,reject)=>{
-        dd.biz.util.scan({
-          type: 'qrCode',
-          onSuccess: res => resolve(res.text),
-          onFail   : err => reject(err)
-        });
-      });
-    }
-
-    /* ====== 4. 拼装并 POST ====== */
-    async function postData(content) {
+    /* 扫码 → 免登 → 连接流 */
+    async function submitData(codeContent) {
       const now = new Date();
       const body = {
-        content : content,
-        scanTime: `${now.getFullYear()}-${(now.getMonth()+1).toString().padStart(2,'0')}-${now.getDate().toString().padStart(2,'0')} ${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}:${now.getSeconds().toString().padStart(2,'0')}`,
-        scanDate: `${now.getFullYear()}-${(now.getMonth()+1).toString().padStart(2,'0')}-${now.getDate().toString().padStart(2,'0')}`,
-        userId  : '',   // 免登后再补
-        userName: ''
+        content : codeContent,
+        scanTime: `${now.getFullYear()}-${(now.getMonth()+1).toString().padStart(2,0)}-${now.getDate().toString().padStart(2,0)} ${now.getHours().toString().padStart(2,0)}:${now.getMinutes().toString().padStart(2,0)}:${now.getSeconds().toString().padStart(2,0)}`,
+        scanDate: `${now.getFullYear()}-${(now.getMonth()+1).toString().padStart(2,0)}-${now.getDate().toString().padStart(2,0)}`,
+        userId   : '',
+        userName : ''
       };
 
-      // 免登拿用户
-      status('正在获取用户信息…','#1890ff');
-      const code = await getUserInfo();
-      // 用 code 换用户详情（下面简化，直接调服务端免登接口，官方样例即可）
-      const userResp = await fetch('/getUserInfo?code='+code);  // 你后台或静态代理
-      const user = await userResp.json();
+      // 1. 免登拿 code
+      status('正在获取用户信息…');
+      const authCode = await new Promise((resolve, reject) =>
+        dd.runtime.permission.requestAuthCode({
+          corpId: _config.corpId,
+          onSuccess: res => resolve(res.code),
+          onFail   : err => reject(err)
+        })
+      );
+
+      // 2. 用 code 换 userid / name
+      const userResp = await fetch(`${USER_API}?code=${authCode}`);
+      const user     = await userResp.json();
+      if (!user.userid) throw new Error(user.msg || '免登失败');
       body.userId   = user.userid;
       body.userName = user.name;
 
-      status('正在录入…','#1890ff');
-      const rsp = await fetch(WEBHOOK_URL,{
+      // 3. 发送到连接流
+      status('正在提交…');
+      const rsp = await fetch(WEBHOOK_URL, {
         method : 'POST',
-        headers: {
-          'Content-Type':'application/json',
-          ...(TOKEN ? {'Token':TOKEN} : {})   // 如果连接流开了 Token 校验
-        },
-        body: JSON.stringify(body)
+        headers: { 'Content-Type': 'application/json', ...(TOKEN ? {Token: TOKEN} : {}) },
+        body   : JSON.stringify(body)
       });
       const json = await rsp.json();
-      if(json.success){
-        status('录入成功！','#52c41a');
-      }else{
-        status('录入失败：'+json.message,'#ff4d4f');
+      if (json.success) {
+        status('录入成功！', '#52c41a');
+        setTimeout(() => status('等待扫码…'), 2000);
+      } else {
+        throw new Error(json.message || '提交失败');
       }
     }
 
-    /* ====== 5. 按钮事件 ====== */
-    $('scanBtn').addEventListener('click', async ()=>{
-      try{
-        const txt = await scan();
-        status(`扫码结果：${txt}`,'#666');
-        await postData(txt);
-      }catch(e){
-        status('用户取消或失败','#ff4d4f');
+    /* 按钮事件 */
+    $('scanBtn').addEventListener('click', async () => {
+      const btn = $('scanBtn');
+      btn.disabled = true;
+      try {
+        const code = await new Promise((resolve, reject) =>
+          dd.biz.util.scan({ type: 'qrCode', onSuccess: res => resolve(res.text), onFail: err => reject(err) })
+        );
+        status(`扫码结果：${code}`);
+        await submitData(code);
+      } catch (e) {
+        status(e.message || '用户取消或失败', '#ff4d4f');
+      } finally {
+        btn.disabled = false;
       }
     });
 
-    /* ====== 6. 钉钉鉴权配置（静态 H5 必须） ====== */
-    dd.ready(() => { console.log('dd.ready ok') });
-    dd.error(err => { console.error('dd.error',err) });
+    dd.ready(() => console.log('JSAPI ready'));
+    dd.error(err => console.error('JSAPI error', err));
   </script>
 </body>
 </html>
