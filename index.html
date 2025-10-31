@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8" />
-  <title>扫码签到</title>
+  <title>扫码入库（连接流版）</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <!-- 钉钉 JSAPI -->
   <script src="https://g.alicdn.com/dingding/dingtalk-jsapi/2.10.1/dingtalk.open.js"></script>
@@ -21,7 +21,7 @@
 
   <script>
     /* ===== 1. 唯一需要改的地址：连接流 Webhook ===== */
-    const FLOW_HOOK = 'https://connector.dingtalk.com/webhook/flow/0747829f52ccf0469457ffc2';   // ← 换成你自己的
+    const FLOW_HOOK = 'https://flow-dingtalk.xxx.webhook/scan-123abc';   // ← 换成你自己的
 
     /* ===== 2. 日志输出 ===== */
     const $log = document.getElementById('log');
@@ -51,10 +51,9 @@
 
         /* 组装连接流需要的数据 */
         const body = {
-          scanResult: res.text,
-          userId: await getUserId(),                 // 当前用户
-          deviceId: dd.device.platform || 'unknown',
-          scanTime: new Date().toLocaleString('zh-CN', { hourCycle: 'h23' })
+          u: await getUserId(),           // 操作人员
+          tm: new Date().toLocaleString('zh-CN', { hourCycle: 'h23' }),  // 扫码日期
+          r: res.text                     // 标签位置（扫码结果）
         };
 
         log('提交连接流 Webhook...');
@@ -82,8 +81,11 @@
     async function getUserId() {
       return new Promise((resolve) => {
         dd.runtime.permission.requestAuthCode({
-          corpId: 'ding7e9dde4f5cecba404ac5d6980864d335',          // 替换成你的真实 corpId，也可从 JSAPI 签名接口带回
-          onSuccess: info => resolve(info.code), // 这里简化用 authCode 当标识
+          corpId: _CORP_ID,          // 替换成你的真实 corpId，也可从 JSAPI 签名接口带回
+          onSuccess: info => {
+            // 这里简化用 authCode 当标识，实际使用时需要进一步解析获取 userId
+            resolve(info.code);
+          },
           onFail   : err => resolve('unknown')
         });
       });
@@ -91,5 +93,3 @@
   </script>
 </body>
 </html>
-
-
