@@ -82,7 +82,7 @@
     async function getUserId() {
       return new Promise((resolve) => {
         dd.runtime.permission.requestAuthCode({
-          corpId: ding7e9dde4f5cecba404ac5d6980864d335,          // 替换成你的真实 corpId，也可从 JSAPI 签名接口带回
+          corpId: 'ding7e9dde4f5cecba404ac5d6980864d335',          // 替换成你的真实 corpId，也可从 JSAPI 签名接口带回
           onSuccess: info => resolve(info.code), // 这里简化用 authCode 当标识
           onFail   : err => resolve('unknown')
         });
@@ -91,4 +91,5 @@
   </script>
 </body>
 </html>
+
 
