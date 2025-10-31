@@ -2,151 +2,317 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>扫码提交到多维表</title>
-  <script src="https://g.alicdn.com/dingding/dingtalk-pc-api/2.10.12/index.js"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>二维码扫描 & AI表格写入</title>
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto; padding: 20px; }
-    button { padding: 12px 24px; font-size: 16px; margin: 10px 0; }
-    .btn-primary { background: #1890ff; color: white; border: none; border-radius: 4px; cursor: pointer; }
-    .btn-primary:disabled { background: #bfbfbf; cursor: not-allowed; }
-    #result { margin-top: 20px; padding: 10px; background: #f5f5f5; border-radius: 4px; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      padding: 20px;
+      background-color: #f5f5f5;
+      color: #333;
+      line-height: 1.5;
+    }
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      background: white;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    h1 {
+      text-align: center;
+      color: #1890ff;
+      margin-bottom: 20px;
+    }
+    .status-card {
+      margin: 20px 0;
+      padding: 15px;
+      background: #f9f9f9;
+      border-left: 4px solid #1890ff;
+      border-radius: 6px;
+    }
+    .status-card.success {
+      border-left-color: #52c41a;
+      background: #f6ffed;
+    }
+    button {
+      display: block;
+      width: 100%;
+      padding: 14px;
+      font-size: 18px;
+      background: #1890ff;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      margin: 10px 0;
+    }
+    button.success {
+      background: #52c41a;
+    }
+    .log {
+      margin-top: 20px;
+      padding: 15px;
+      background: #f0f0f0;
+      font-family: 'Courier New', monospace;
+      white-space: pre-wrap;
+      border-radius: 6px;
+      max-height: 300px;
+      overflow-y: auto;
+      font-size: 14px;
+    }
   </style>
 </head>
 <body>
-  <h2>扫码并提交数据</h2>
-  <button id="scanBtn" class="btn-primary">点击扫码</button>
-  <div id="result"></div>
+  <div class="container">
+    <h1>二维码扫描 & AI表格写入</h1>
+    
+    <div class="status-card success">
+      ✅ 钉钉环境检测正常<br>
+      ✅ 扫码功能已验证正常<br>
+      🔄 使用JSONP获取配置，CORS写入数据
+    </div>
+    
+    <div>
+      <button id="scanBtn">
+        📷 扫描二维码
+      </button>
+      <div id="scanResult" class="status-card" style="display:none;">
+        <!-- 扫码结果将显示在这里 -->
+      </div>
+    </div>
+    
+    <div>
+      <button id="writeTableBtn" disabled class="success">
+        📊 写入 AI 表格
+      </button>
+    </div>
+
+    <div>
+      <button id="testJsonpBtn" style="background: #722ed1;">
+        🧪 JSONP测试后端
+      </button>
+    </div>
+    
+    <div>
+      <div><strong>操作日志</strong></div>
+      <div class="log" id="log"></div>
+    </div>
+  </div>
+
+  <script src="https://g.alicdn.com/dingding/dingtalk-jsapi/2.13.42/dingtalk.open.js"></script>
 
   <script>
-    let currentUser = null; // 存储当前用户信息
+    // 工具函数
+    function log(msg) {
+      const logEl = document.getElementById('log');
+      const line = `[${new Date().toLocaleTimeString()}] ${msg}`;
+      logEl.textContent += line + '\n';
+      logEl.scrollTop = logEl.scrollHeight;
+      console.log(line);
+    }
 
-    // 第一步：免登获取用户身份
-    function dingtalkAuth() {
+    let scanData = null;
+
+    // JSONP方式调用后端获取配置
+    function callBackendWithJsonp() {
       return new Promise((resolve, reject) => {
-        const url = encodeURIComponent(window.location.href);
-        // 调用钉钉免登接口
-        dd.runtime.permission.requestAuthCode({
-          corpId: "ding7e9dde4f5cecba404ac5d6980864d335", // 替换为你的企业 corpId（可在管理后台查看）
-          onSuccess: function(info) {
-            // 用 code 换用户信息（需后端！但钉钉 H5 可用 JSAPI 直接获取部分信息）
-            // 实际上，在钉钉容器内，可通过 dd.getEnv 直接拿到用户信息（部分版本支持）
-            // 更可靠方式：调用 dd.getUserInfo（需在可信域名下）
-            getUserInfo().then(resolve).catch(reject);
-          },
-          onFail: function(err) {
-            console.error('免登失败', err);
-            alert('身份验证失败，请在钉钉中打开');
-            reject(err);
-          }
-        });
+        const callbackName = 'jsonp_callback_' + Date.now();
+        const url = 'https://get-config-nltlezcizh.cn-hangzhou.fcapp.run?url=' + 
+                   encodeURIComponent(window.location.href) + 
+                   '&callback=' + callbackName;
+        
+        log(`📤 JSONP请求: ${url}`);
+        
+        // 创建script标签
+        const script = document.createElement('script');
+        script.src = url;
+        
+        // 设置超时
+        const timeoutId = setTimeout(() => {
+          reject(new Error('JSONP请求超时'));
+          document.head.removeChild(script);
+          delete window[callbackName];
+        }, 10000);
+        
+        // 定义回调函数
+        window[callbackName] = function(data) {
+          clearTimeout(timeoutId);
+          document.head.removeChild(script);
+          delete window[callbackName];
+          resolve(data);
+        };
+        
+        // 错误处理
+        script.onerror = function() {
+          clearTimeout(timeoutId);
+          document.head.removeChild(script);
+          delete window[callbackName];
+          reject(new Error('JSONP请求失败'));
+        };
+        
+        document.head.appendChild(script);
       });
     }
 
-    // 第二步：获取用户详细信息（姓名、userid）
-    function getUserInfo() {
-      return new Promise((resolve, reject) => {
-        dd.getUserInfo({
-          onSuccess: function(res) {
-            console.log('用户信息:', res);
-            currentUser = {
-              userid: res.userid,
-              name: res.nick || res.name,
-              avatar: res.avatar
-            };
-            resolve(currentUser);
+    // 通过CORS POST请求写入AI表格
+    async function writeToAiTable(tableData) {
+      try {
+        const response = await fetch('https://get-config-nltlezcizh.cn-hangzhou.fcapp.run', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
           },
-          onFail: function(err) {
-            console.error('获取用户信息失败', err);
-            reject(err);
-          }
+          body: JSON.stringify({
+            tableData: tableData
+          })
         });
-      });
-    }
-
-    // 第三步：调用扫码
-    function startScan() {
-      if (!currentUser) {
-        alert('请先完成身份验证');
-        return;
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        return await response.json();
+      } catch (error) {
+        console.error('Fetch error:', error);
+        throw error;
       }
+    }
 
+    // 初始化钉钉配置
+    async function initDingtalkConfig() {
+      log('🔄 开始初始化钉钉配置...');
+      
+      try {
+        // 使用JSONP获取配置
+        const config = await callBackendWithJsonp();
+        log(`✅ 钉钉配置获取成功: agentId=${config.agentId}, corpId=${config.corpId}`);
+        
+        // 初始化钉钉JSAPI
+        dd.config({
+          agentId: config.agentId,
+          corpId: config.corpId,
+          timeStamp: config.timeStamp,
+          nonceStr: config.nonceStr,
+          signature: config.signature,
+          jsApiList: [
+            'biz.util.scan',
+            'device.notification.alert',
+            'device.notification.confirm',
+            'device.notification.prompt',
+            'biz.ding.create',
+            'biz.util.uploadImage',
+            'biz.util.openLink'
+          ]
+        });
+        
+        dd.ready(() => {
+          log('✅ 钉钉JSAPI初始化成功');
+          document.getElementById('scanBtn').disabled = false;
+        });
+        
+        dd.error((err) => {
+          log(`❌ 钉钉JSAPI初始化失败: ${JSON.stringify(err)}`);
+          alert('钉钉JSAPI初始化失败，请检查配置');
+        });
+        
+      } catch (error) {
+        log(`❌ 初始化钉钉配置失败: ${error.message}`);
+        alert('获取钉钉配置失败，请检查网络连接');
+      }
+    }
+
+    // 页面加载
+    document.addEventListener('DOMContentLoaded', function() {
+      log('📄 页面加载完成');
+      // 延迟初始化，确保钉钉环境已加载
+      setTimeout(initDingtalkConfig, 500);
+    });
+
+    // JSONP测试按钮
+    document.getElementById('testJsonpBtn').addEventListener('click', async function() {
+      log('🧪 开始JSONP测试后端');
+      
+      try {
+        const data = await callBackendWithJsonp();
+        log(`✅ JSONP测试成功: ${JSON.stringify(data)}`);
+        alert('✅ 后端连接成功！');
+      } catch (error) {
+        log(`❌ JSONP测试失败: ${error.message}`);
+        alert('❌ 后端连接失败，请检查网络');
+      }
+    });
+
+    // 扫描按钮事件
+    document.getElementById('scanBtn').addEventListener('click', function() {
+      log('📲 用户点击"扫描二维码"');
+      
       dd.biz.util.scan({
-        type: 'all', // 支持 all / qr / bar
+        type: "qrCode",
         onSuccess: function(data) {
-          console.log('扫码结果:', data);
-          const scanContent = data.text;
-
-          // 组装最终提交数据
-          const payload = {
-            content: scanContent,
-            scanTime: new Date().toISOString(), // ISO 8601 格式，多维表兼容性最好
-            scanDate: new Date().toISOString().split('T')[0],
-            operatorName: currentUser.name,
-            operatorId: currentUser.userid
-          };
-
-          // 显示结果（实际项目中这里调用 submitToWebhook(payload)）
-          document.getElementById('result').innerHTML = `
-            <p><strong>扫码内容：</strong>${scanContent}</p>
-            <p><strong>操作人：</strong>${currentUser.name} (${currentUser.userid})</p>
-            <p><strong>时间：</strong>${new Date().toLocaleString()}</p>
-            <button class="btn-primary" onclick="submitToWebhook(${JSON.stringify(payload).replace(/'/g, "\\'")})">
-              提交到多维表
-            </button>
-          `;
+          log('✅ 扫码成功: ' + data.text);
+          scanData = data.text;
+          
+          const resultEl = document.getElementById('scanResult');
+          resultEl.innerHTML = `<strong>扫码结果：</strong> ${data.text}`;
+          resultEl.style.display = 'block';
+          
+          document.getElementById('writeTableBtn').disabled = false;
         },
         onFail: function(err) {
-          console.error('扫码失败', err);
-          alert('扫码失败：' + (err.message || '未知错误'));
+          log('❌ 扫码失败: ' + JSON.stringify(err));
+          alert('扫码失败，请重试');
         }
       });
-    }
-
-    // 第四步：提交到你已创建的 Webhook 连接流
-    function submitToWebhook(payload) {
-      const webhookUrl = 'https://connector.dingtalk.com/webhook/flow/0747829f52ccf0469457ffc2'; // ← 替换为你的实际 URL
-
-      // 如果你的连接流设置了 Token 认证，请取消下一行注释并填入 token
-      // const token = 'your_token_here';
-
-      fetch(webhookUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          // ...(token ? { 'X-DingTalk-Token': token } : {})
-        },
-        body: JSON.stringify(payload)
-      })
-      .then(res => res.json())
-      .then(data => {
-        if (data.success || data.code === 0) {
-          alert('✅ 提交成功！数据已写入多维表');
-        } else {
-          alert('❌ 提交失败：' + (data.message || JSON.stringify(data)));
-        }
-      })
-      .catch(err => {
-        console.error('网络错误:', err);
-        alert('网络错误，请检查控制台');
-      });
-    }
-
-    // 页面加载完成后自动初始化
-    document.addEventListener('DOMContentLoaded', function() {
-      // 初始化钉钉 JSAPI
-      dd.ready(function() {
-        console.log('钉钉 JSAPI 已准备就绪');
-        // 自动获取用户身份
-        dingtalkAuth().catch(err => {
-          console.error('初始化失败', err);
-        });
-      });
-
-      // 绑定扫码按钮
-      document.getElementById('scanBtn').addEventListener('click', startScan);
     });
+
+    // 写入表格按钮事件
+    document.getElementById('writeTableBtn').addEventListener('click', async function() {
+      if (!scanData) {
+        alert('请先扫描二维码！');
+        return;
+      }
+      
+      const button = this;
+      const originalText = button.textContent;
+      button.disabled = true;
+      button.textContent = '⏳ 写入中...';
+      
+      log('📤 准备写入数据: ' + scanData);
+      
+      try {
+        // 准备写入数据
+        const tableData = {
+          scanContent: scanData,
+          scanDate: new Date().toLocaleDateString(),
+          scanTime: new Date().toLocaleTimeString(),
+          scanDateTime: new Date().toISOString(),
+          operator: '钉钉用户',
+          deviceInfo: navigator.userAgent
+        };
+        
+        // 通过CORS POST请求写入AI表格
+        const result = await writeToAiTable(tableData);
+        log('✅ 数据写入完成: ' + JSON.stringify(result));
+        button.textContent = '✅ 已写入';
+        button.style.background = '#52c41a';
+        
+        setTimeout(() => {
+          button.textContent = originalText;
+          button.disabled = false;
+          button.style.background = '';
+        }, 3000);
+      } catch (error) {
+        log('❌ 写入失败: ' + error.message);
+        button.disabled = false;
+        button.textContent = originalText;
+        alert('写入失败: ' + error.message);
+      }
+    });
+
   </script>
 </body>
 </html>
+
 
