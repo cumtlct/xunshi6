@@ -1,348 +1,318 @@
-import https from 'https';
-import crypto from 'crypto';
-import { URL } from 'url'; // 显式导入 URL（Node.js 18 已内置，但显式更安全）
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>二维码扫描 & AI表格写入</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      padding: 20px;
+      background-color: #f5f5f5;
+      color: #333;
+      line-height: 1.5;
+    }
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      background: white;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    h1 {
+      text-align: center;
+      color: #1890ff;
+      margin-bottom: 20px;
+    }
+    .status-card {
+      margin: 20px 0;
+      padding: 15px;
+      background: #f9f9f9;
+      border-left: 4px solid #1890ff;
+      border-radius: 6px;
+    }
+    .status-card.success {
+      border-left-color: #52c41a;
+      background: #f6ffed;
+    }
+    button {
+      display: block;
+      width: 100%;
+      padding: 14px;
+      font-size: 18px;
+      background: #1890ff;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      margin: 10px 0;
+    }
+    button.success {
+      background: #52c41a;
+    }
+    .log {
+      margin-top: 20px;
+      padding: 15px;
+      background: #f0f0f0;
+      font-family: 'Courier New', monospace;
+      white-space: pre-wrap;
+      border-radius: 6px;
+      max-height: 300px;
+      overflow-y: auto;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>二维码扫描 & AI表格写入</h1>
+    
+    <div class="status-card success">
+      ✅ 钉钉环境检测正常<br>
+      ✅ 扫码功能已验证正常<br>
+      🔄 使用JSONP获取配置，CORS写入数据
+    </div>
+    
+    <div>
+      <button id="scanBtn">
+        📷 扫描二维码
+      </button>
+      <div id="scanResult" class="status-card" style="display:none;">
+        <!-- 扫码结果将显示在这里 -->
+      </div>
+    </div>
+    
+    <div>
+      <button id="writeTableBtn" disabled class="success">
+        📊 写入 AI 表格
+      </button>
+    </div>
 
-// 从环境变量读取所有配置信息
-const CORP_ID = process.env.CORP_ID;
-const AGENT_ID = parseInt(process.env.AGENT_ID, 10);
-const APP_KEY = process.env.APP_KEY;
-const APP_SECRET = process.env.APP_SECRET;
-const NODE_ID = process.env.NODE_ID;
-const SHEET_ID = process.env.SHEET_ID;
+    <div>
+      <button id="testJsonpBtn" style="background: #722ed1;">
+        🧪 JSONP测试后端
+      </button>
+    </div>
+    
+    <div>
+      <div><strong>操作日志</strong></div>
+      <div class="log" id="log"></div>
+    </div>
+  </div>
 
-// 校验必要环境变量
-const requiredEnvVars = ['CORP_ID', 'AGENT_ID', 'APP_KEY', 'APP_SECRET'];
-for (const key of requiredEnvVars) {
-  if (!process.env[key]) {
-    console.error(`环境变量缺失: ${key}`);
-    throw new Error(`Missing environment variable: ${key}`);
-  }
-}
+  <script src="https://g.alicdn.com/dingding/dingtalk-jsapi/2.13.42/dingtalk.open.js"></script>
 
-// 缓存AccessToken和jsapi_ticket以提高性能（注意：仅在实例生命周期内有效）
-let cachedAccessToken = null;
-let tokenExpiresAt = 0;
-let cachedTicket = null;
-let ticketExpiresAt = 0;
+  <script>
+    // 工具函数
+    function log(msg) {
+      const logEl = document.getElementById('log');
+      const line = `[${new Date().toLocaleTimeString()}] ${msg}`;
+      logEl.textContent += line + '\n';
+      logEl.scrollTop = logEl.scrollHeight;
+      console.log(line);
+    }
 
-/**
- * 将 URL 字符串转换为 https.request 所需的 options 对象
- */
-function urlToOptions(urlStr) {
-  const url = new URL(urlStr);
-  return {
-    hostname: url.hostname,
-    port: url.port || (url.protocol === 'https:' ? 443 : 80),
-    path: url.pathname + url.search,
-    method: 'GET',
-    headers: {}
-  };
-}
+    let scanData = null;
 
-/**
- * 发起HTTPS请求的工具函数
- */
-function httpRequest(options, postData = null) {
-  return new Promise((resolve, reject) => {
-    const req = https.request(options, (res) => {
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => {
-        try {
-          resolve(JSON.parse(data));
-        } catch (e) {
-          resolve(data); // 非 JSON 响应
+    // JSONP方式调用后端获取配置
+    function callBackendWithJsonp() {
+      return new Promise((resolve, reject) => {
+        const callbackName = 'jsonp_callback_' + Date.now();
+        const url = 'https://get-config-nltlezcizh.cn-hangzhou.fcapp.run?url=' + 
+                   encodeURIComponent(window.location.href) + 
+                   '&callback=' + callbackName;
+        
+        log(`📤 JSONP请求: ${url}`);
+        
+        // 创建script标签
+        const script = document.createElement('script');
+        script.src = url;
+        
+        // 设置超时
+        const timeoutId = setTimeout(() => {
+          reject(new Error('JSONP请求超时'));
+          document.head.removeChild(script);
+          delete window[callbackName];
+        }, 10000);
+        
+        // 定义回调函数
+        window[callbackName] = function(data) {
+          clearTimeout(timeoutId);
+          document.head.removeChild(script);
+          delete window[callbackName];
+          resolve(data);
+        };
+        
+        // 错误处理
+        script.onerror = function() {
+          clearTimeout(timeoutId);
+          document.head.removeChild(script);
+          delete window[callbackName];
+          reject(new Error('JSONP请求失败'));
+        };
+        
+        document.head.appendChild(script);
+      });
+    }
+
+    // 通过CORS POST请求写入AI表格
+    async function writeToAiTable(tableData) {
+      try {
+        const response = await fetch('https://get-config-nltlezcizh.cn-hangzhou.fcapp.run', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            tableData: tableData
+          })
+        });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        return await response.json();
+      } catch (error) {
+        console.error('Fetch error:', error);
+        throw error;
+      }
+    }
+
+    // 初始化钉钉配置
+    async function initDingtalkConfig() {
+      log('🔄 开始初始化钉钉配置...');
+      
+      try {
+        // 使用JSONP获取配置
+        const config = await callBackendWithJsonp();
+        log(`✅ 钉钉配置获取成功: agentId=${config.agentId}, corpId=${config.corpId}`);
+        
+        // 初始化钉钉JSAPI
+        dd.config({
+          agentId: config.agentId,
+          corpId: config.corpId,
+          timeStamp: config.timeStamp,
+          nonceStr: config.nonceStr,
+          signature: config.signature,
+          jsApiList: [
+            'biz.util.scan',
+            'device.notification.alert',
+            'device.notification.confirm',
+            'device.notification.prompt',
+            'biz.ding.create',
+            'biz.util.uploadImage',
+            'biz.util.openLink'
+          ]
+        });
+        
+        dd.ready(() => {
+          log('✅ 钉钉JSAPI初始化成功');
+          document.getElementById('scanBtn').disabled = false;
+        });
+        
+        dd.error((err) => {
+          log(`❌ 钉钉JSAPI初始化失败: ${JSON.stringify(err)}`);
+          alert('钉钉JSAPI初始化失败，请检查配置');
+        });
+        
+      } catch (error) {
+        log(`❌ 初始化钉钉配置失败: ${error.message}`);
+        alert('获取钉钉配置失败，请检查网络连接');
+      }
+    }
+
+    // 页面加载
+    document.addEventListener('DOMContentLoaded', function() {
+      log('📄 页面加载完成');
+      // 延迟初始化，确保钉钉环境已加载
+      setTimeout(initDingtalkConfig, 500);
+    });
+
+    // JSONP测试按钮
+    document.getElementById('testJsonpBtn').addEventListener('click', async function() {
+      log('🧪 开始JSONP测试后端');
+      
+      try {
+        const data = await callBackendWithJsonp();
+        log(`✅ JSONP测试成功: ${JSON.stringify(data)}`);
+        alert('✅ 后端连接成功！');
+      } catch (error) {
+        log(`❌ JSONP测试失败: ${error.message}`);
+        alert('❌ 后端连接失败，请检查网络');
+      }
+    });
+
+    // 扫描按钮事件
+    document.getElementById('scanBtn').addEventListener('click', function() {
+      log('📲 用户点击"扫描二维码"');
+      
+      dd.biz.util.scan({
+        type: "qrCode",
+        onSuccess: function(data) {
+          log('✅ 扫码成功: ' + data.text);
+          scanData = data.text;
+          
+          const resultEl = document.getElementById('scanResult');
+          resultEl.innerHTML = `<strong>扫码结果：</strong> ${data.text}`;
+          resultEl.style.display = 'block';
+          
+          document.getElementById('writeTableBtn').disabled = false;
+        },
+        onFail: function(err) {
+          log('❌ 扫码失败: ' + JSON.stringify(err));
+          alert('扫码失败，请重试');
         }
       });
     });
-    req.on('error', reject);
-    if (postData) {
-      req.write(postData);
-    }
-    req.end();
-  });
-}
 
-/**
- * 获取AccessToken (带缓存机制)
- */
-async function getAccessToken() {
-  const now = Date.now();
-  if (cachedAccessToken && tokenExpiresAt > now + 60000) {
-    return cachedAccessToken;
-  }
-
-  const url = `https://oapi.dingtalk.com/gettoken?appkey=${encodeURIComponent(APP_KEY)}&appsecret=${encodeURIComponent(APP_SECRET)}`;
-  const options = urlToOptions(url);
-  const res = await httpRequest(options);
-
-  if (res.errcode !== 0) {
-    throw new Error('获取access_token失败: ' + res.errmsg);
-  }
-
-  cachedAccessToken = res.access_token;
-  tokenExpiresAt = now + (res.expires_in - 300) * 1000;
-  return cachedAccessToken;
-}
-
-/**
- * 获取jsapi_ticket (带缓存机制)
- */
-async function getJsApiTicket(accessToken) {
-  const now = Date.now();
-  if (cachedTicket && ticketExpiresAt > now + 60000) {
-    return cachedTicket;
-  }
-
-  const url = `https://oapi.dingtalk.com/get_jsapi_ticket?access_token=${encodeURIComponent(accessToken)}`;
-  const options = urlToOptions(url);
-  const res = await httpRequest(options);
-
-  if (res.errcode !== 0) {
-    throw new Error('获取jsapi_ticket失败: ' + res.errmsg);
-  }
-
-  cachedTicket = res.ticket;
-  ticketExpiresAt = now + (res.expires_in - 300) * 1000;
-  return cachedTicket;
-}
-
-/**
- * 生成JSAPI签名
- */
-function generateSignature(ticket, nonceStr, timeStamp, url) {
-  const stringToSign = `jsapi_ticket=${ticket}&noncestr=${nonceStr}&timestamp=${timeStamp}&url=${url}`;
-  return crypto.createHash('sha1').update(stringToSign, 'utf8').digest('hex');
-}
-
-/**
- * 向钉钉AI表格写入记录
- */
-async function writeToAiSheet(accessToken, tableData) {
-  if (!NODE_ID || !SHEET_ID) {
-    throw new Error('节点ID或数据表ID未配置，请检查环境变量');
-  }
-
-  console.log('准备写入AI表格，节点ID:', NODE_ID, '数据表ID:', SHEET_ID);
-
-  const requestData = {
-    records: [
-      {
-        fields: {
-          '扫描内容': tableData.scanContent || '',
-          '扫描日期': tableData.scanDate,
-          '扫描时间': tableData.scanTime,
-          '操作人员': tableData.operator || '未知用户',
-          '设备信息': tableData.deviceInfo || '未知设备',
-          '记录时间': tableData.scanDateTime
-        }
+    // 写入表格按钮事件
+    document.getElementById('writeTableBtn').addEventListener('click', async function() {
+      if (!scanData) {
+        alert('请先扫描二维码！');
+        return;
       }
-    ]
-  };
-
-  const options = {
-    hostname: 'api.dingtalk.com',
-    port: 443,
-    path: `/v1.0/doc/nodes/${NODE_ID}/sheets/${SHEET_ID}/records`,
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-acs-dingtalk-access-token': accessToken
-    }
-  };
-
-  console.log('调用AI表格API:', options.path);
-  const result = await httpRequest(options, JSON.stringify(requestData));
-  console.log('AI表格API响应:', JSON.stringify(result));
-
-  if (result.records && result.records.length > 0) {
-    return {
-      success: true,
-      recordId: result.records[0].recordId
-    };
-  } else {
-    throw new Error('写入AI表格失败: ' + JSON.stringify(result));
-  }
-}
-
-/**
- * 解析Buffer格式的事件对象 - 修复版本
- */
-function parseBufferEvent(event) {
-  console.log('事件类型:', typeof event);
-
-  if (Buffer.isBuffer(event)) {
-    console.log('事件是Buffer格式，进行转换');
-    try {
-      const eventStr = event.toString('utf8');
-      const parsedEvent = JSON.parse(eventStr);
-      console.log('解析后的事件对象结构:', Object.keys(parsedEvent));
-      console.log('queryParameters:', parsedEvent.queryParameters);
-      return parsedEvent;
-    } catch (e) {
-      console.error('解析事件JSON失败:', e.message);
-      return {};
-    }
-  }
-
-  if (typeof event === 'object' && event !== null) {
-    console.log('事件已经是对象格式');
-    return event;
-  }
-
-  console.log('未知的事件格式，返回空对象');
-  return {};
-}
-
-/**
- * 验证callback参数是否为合法的JavaScript标识符（防止XSS）
- */
-function isValidCallbackName(callback) {
-  return /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(callback);
-}
-
-/**
- * 主处理函数
- */
-export async function handler(event, context) {
-  const baseHeaders = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With'
-  };
-
-  try {
-    console.log('收到原始事件，开始处理...');
-    const parsedEvent = parseBufferEvent(event);
-    const method = parsedEvent.httpMethod || 'GET';
-    const queryParameters = parsedEvent.queryParameters || {};
-    const urlParam = queryParameters.url;
-    const callback = queryParameters.callback;
-
-    console.log('请求方法:', method);
-    console.log('所有查询参数:', JSON.stringify(queryParameters));
-
-    // 处理预检请求
-    if (method === 'OPTIONS') {
-      console.log('处理OPTIONS预检请求');
-      return {
-        statusCode: 204,
-        headers: baseHeaders,
-        body: ''
-      };
-    }
-
-    if (method === 'GET') {
-      if (!urlParam) {
-        const errorResponse = {
-          error: '缺少url参数',
-          message: '请确保请求格式为: ?url=您的页面URL',
-          example: `?url=https://cumtlct.github.io/xunshi6/`,
-          receivedParams: queryParameters
-        };
-
-        if (callback && isValidCallbackName(callback)) {
-          return {
-            statusCode: 400,
-            headers: { ...baseHeaders, 'Content-Type': 'application/javascript; charset=utf-8' },
-            body: `${callback}(${JSON.stringify(errorResponse)});`
-          };
-        } else {
-          return {
-            statusCode: 400,
-            headers: { ...baseHeaders, 'Content-Type': 'application/json; charset=utf-8' },
-            body: JSON.stringify(errorResponse)
-          };
-        }
-      }
-
-      const accessToken = await getAccessToken();
-      const ticket = await getJsApiTicket(accessToken);
-      const nonceStr = Math.random().toString(36).substring(2, 15);
-      const timeStamp = Math.floor(Date.now() / 1000).toString();
-      const signature = generateSignature(ticket, nonceStr, timeStamp, decodeURIComponent(urlParam));
-
-      const responseData = {
-        agentId: AGENT_ID,
-        corpId: CORP_ID,
-        timeStamp: timeStamp,
-        nonceStr: nonceStr,
-        signature: signature
-      };
-
-      if (callback && isValidCallbackName(callback)) {
-        return {
-          statusCode: 200,
-          headers: { ...baseHeaders, 'Content-Type': 'application/javascript; charset=utf-8' },
-          body: `${callback}(${JSON.stringify(responseData)});`
-        };
-      } else {
-        return {
-          statusCode: 200,
-          headers: { ...baseHeaders, 'Content-Type': 'application/json; charset=utf-8' },
-          body: JSON.stringify(responseData)
-        };
-      }
-    } else if (method === 'POST') {
-      let body = parsedEvent.body;
-      if (parsedEvent.isBase64Encoded && body) {
-        body = Buffer.from(body, 'base64').toString();
-      }
-
-      if (!body) {
-        throw new Error('请求体为空');
-      }
-
-      let parsedBody;
+      
+      const button = this;
+      const originalText = button.textContent;
+      button.disabled = true;
+      button.textContent = '⏳ 写入中...';
+      
+      log('📤 准备写入数据: ' + scanData);
+      
       try {
-        parsedBody = typeof body === 'string' ? JSON.parse(body) : body;
-      } catch (e) {
-        throw new Error('请求体JSON解析失败: ' + e.message);
+        // 准备写入数据
+        const tableData = {
+          scanContent: scanData,
+          scanDate: new Date().toLocaleDateString(),
+          scanTime: new Date().toLocaleTimeString(),
+          scanDateTime: new Date().toISOString(),
+          operator: '钉钉用户',
+          deviceInfo: navigator.userAgent
+        };
+        
+        // 通过CORS POST请求写入AI表格
+        const result = await writeToAiTable(tableData);
+        log('✅ 数据写入完成: ' + JSON.stringify(result));
+        button.textContent = '✅ 已写入';
+        button.style.background = '#52c41a';
+        
+        setTimeout(() => {
+          button.textContent = originalText;
+          button.disabled = false;
+          button.style.background = '';
+        }, 3000);
+      } catch (error) {
+        log('❌ 写入失败: ' + error.message);
+        button.disabled = false;
+        button.textContent = originalText;
+        alert('写入失败: ' + error.message);
       }
+    });
 
-      const { tableData } = parsedBody;
-      if (!tableData) {
-        throw new Error('缺少tableData参数');
-      }
+  </script>
+</body>
+</html>
 
-      const accessToken = await getAccessToken();
-      const result = await writeToAiSheet(accessToken, tableData);
 
-      return {
-        statusCode: 200,
-        headers: { ...baseHeaders, 'Content-Type': 'application/json; charset=utf-8' },
-        body: JSON.stringify(result)
-      };
-    } else {
-      throw new Error('不支持的请求方法: ' + method);
-    }
-
-  } catch (err) {
-    console.error('处理请求时发生错误:', err.message);
-    console.error('错误堆栈:', err.stack);
-
-    const errorResponse = {
-      error: err.message,
-      success: false
-    };
-
-    const parsedEvent = parseBufferEvent(event);
-    const method = parsedEvent.httpMethod || 'GET';
-    const queryParameters = parsedEvent.queryParameters || {};
-    const callback = queryParameters.callback;
-
-    if (method === 'GET' && callback && isValidCallbackName(callback)) {
-      return {
-        statusCode: 500,
-        headers: { ...baseHeaders, 'Content-Type': 'application/javascript; charset=utf-8' },
-        body: `${callback}(${JSON.stringify(errorResponse)});`
-      };
-    } else {
-      return {
-        statusCode: 500,
-        headers: { ...baseHeaders, 'Content-Type': 'application/json; charset=utf-8' },
-        body: JSON.stringify(errorResponse)
-      };
-    }
-  }
-}
