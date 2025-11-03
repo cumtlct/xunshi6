@@ -1,96 +1,348 @@
-<!doctype html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8" />
-  <title>扫码入库（连接流版0.1）</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <!-- 钉钉 JSAPI -->
-  <script src="https://g.alicdn.com/dingding/dingtalk-jsapi/2.10.1/dingtalk.open.js"></script>
-  <style>
-    body { font-family: PingFang SC, Helvetica, Arial; padding: 20px; }
-    h2   { margin-top: 0; }
-    #log  { background: #f5f5f5; padding: 10px; border-radius: 4px; white-space: pre-wrap; word-break: break-all; }
-    .btn { display: block; width: 100%; line-height: 44px; margin: 15px 0; background: #0078ff; color: #fff; text-align: center; border: none; border-radius: 4px; font-size: 16px; }
-    .btn:active { background: #005fd1; }
-  </style>
-</head>
-<body>
-  <h2>钉钉扫码 → 直连连接流</h2>
-  <button class="btn" id="scanBtn">开始扫码</button>
-  <div id="log"></div>
+import https from 'https';
+import crypto from 'crypto';
+import { URL } from 'url'; // 显式导入 URL（Node.js 18 已内置，但显式更安全）
 
-  <script>
-    /* ===== 1. 唯一需要改的地址：连接流 Webhook ===== */
-    const FLOW_HOOK = 'https://connector.dingtalk.com/webhook/flow/1f7d432ecbd25670562d694e';   // ← 换成你自己的
+// 从环境变量读取所有配置信息
+const CORP_ID = process.env.CORP_ID;
+const AGENT_ID = parseInt(process.env.AGENT_ID, 10);
+const APP_KEY = process.env.APP_KEY;
+const APP_SECRET = process.env.APP_SECRET;
+const NODE_ID = process.env.NODE_ID;
+const SHEET_ID = process.env.SHEET_ID;
 
-    /* ===== 2. 日志输出 ===== */
-    const $log = document.getElementById('log');
-    function log(msg) {
-      $log.textContent += `[${new Date().toLocaleTimeString()}] ${msg}\n`;
-      console.log(msg);
+// 校验必要环境变量
+const requiredEnvVars = ['CORP_ID', 'AGENT_ID', 'APP_KEY', 'APP_SECRET'];
+for (const key of requiredEnvVars) {
+  if (!process.env[key]) {
+    console.error(`环境变量缺失: ${key}`);
+    throw new Error(`Missing environment variable: ${key}`);
+  }
+}
+
+// 缓存AccessToken和jsapi_ticket以提高性能（注意：仅在实例生命周期内有效）
+let cachedAccessToken = null;
+let tokenExpiresAt = 0;
+let cachedTicket = null;
+let ticketExpiresAt = 0;
+
+/**
+ * 将 URL 字符串转换为 https.request 所需的 options 对象
+ */
+function urlToOptions(urlStr) {
+  const url = new URL(urlStr);
+  return {
+    hostname: url.hostname,
+    port: url.port || (url.protocol === 'https:' ? 443 : 80),
+    path: url.pathname + url.search,
+    method: 'GET',
+    headers: {}
+  };
+}
+
+/**
+ * 发起HTTPS请求的工具函数
+ */
+function httpRequest(options, postData = null) {
+  return new Promise((resolve, reject) => {
+    const req = https.request(options, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        try {
+          resolve(JSON.parse(data));
+        } catch (e) {
+          resolve(data); // 非 JSON 响应
+        }
+      });
+    });
+    req.on('error', reject);
+    if (postData) {
+      req.write(postData);
+    }
+    req.end();
+  });
+}
+
+/**
+ * 获取AccessToken (带缓存机制)
+ */
+async function getAccessToken() {
+  const now = Date.now();
+  if (cachedAccessToken && tokenExpiresAt > now + 60000) {
+    return cachedAccessToken;
+  }
+
+  const url = `https://oapi.dingtalk.com/gettoken?appkey=${encodeURIComponent(APP_KEY)}&appsecret=${encodeURIComponent(APP_SECRET)}`;
+  const options = urlToOptions(url);
+  const res = await httpRequest(options);
+
+  if (res.errcode !== 0) {
+    throw new Error('获取access_token失败: ' + res.errmsg);
+  }
+
+  cachedAccessToken = res.access_token;
+  tokenExpiresAt = now + (res.expires_in - 300) * 1000;
+  return cachedAccessToken;
+}
+
+/**
+ * 获取jsapi_ticket (带缓存机制)
+ */
+async function getJsApiTicket(accessToken) {
+  const now = Date.now();
+  if (cachedTicket && ticketExpiresAt > now + 60000) {
+    return cachedTicket;
+  }
+
+  const url = `https://oapi.dingtalk.com/get_jsapi_ticket?access_token=${encodeURIComponent(accessToken)}`;
+  const options = urlToOptions(url);
+  const res = await httpRequest(options);
+
+  if (res.errcode !== 0) {
+    throw new Error('获取jsapi_ticket失败: ' + res.errmsg);
+  }
+
+  cachedTicket = res.ticket;
+  ticketExpiresAt = now + (res.expires_in - 300) * 1000;
+  return cachedTicket;
+}
+
+/**
+ * 生成JSAPI签名
+ */
+function generateSignature(ticket, nonceStr, timeStamp, url) {
+  const stringToSign = `jsapi_ticket=${ticket}&noncestr=${nonceStr}&timestamp=${timeStamp}&url=${url}`;
+  return crypto.createHash('sha1').update(stringToSign, 'utf8').digest('hex');
+}
+
+/**
+ * 向钉钉AI表格写入记录
+ */
+async function writeToAiSheet(accessToken, tableData) {
+  if (!NODE_ID || !SHEET_ID) {
+    throw new Error('节点ID或数据表ID未配置，请检查环境变量');
+  }
+
+  console.log('准备写入AI表格，节点ID:', NODE_ID, '数据表ID:', SHEET_ID);
+
+  const requestData = {
+    records: [
+      {
+        fields: {
+          '扫描内容': tableData.scanContent || '',
+          '扫描日期': tableData.scanDate,
+          '扫描时间': tableData.scanTime,
+          '操作人员': tableData.operator || '未知用户',
+          '设备信息': tableData.deviceInfo || '未知设备',
+          '记录时间': tableData.scanDateTime
+        }
+      }
+    ]
+  };
+
+  const options = {
+    hostname: 'api.dingtalk.com',
+    port: 443,
+    path: `/v1.0/doc/nodes/${NODE_ID}/sheets/${SHEET_ID}/records`,
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-acs-dingtalk-access-token': accessToken
+    }
+  };
+
+  console.log('调用AI表格API:', options.path);
+  const result = await httpRequest(options, JSON.stringify(requestData));
+  console.log('AI表格API响应:', JSON.stringify(result));
+
+  if (result.records && result.records.length > 0) {
+    return {
+      success: true,
+      recordId: result.records[0].recordId
+    };
+  } else {
+    throw new Error('写入AI表格失败: ' + JSON.stringify(result));
+  }
+}
+
+/**
+ * 解析Buffer格式的事件对象 - 修复版本
+ */
+function parseBufferEvent(event) {
+  console.log('事件类型:', typeof event);
+
+  if (Buffer.isBuffer(event)) {
+    console.log('事件是Buffer格式，进行转换');
+    try {
+      const eventStr = event.toString('utf8');
+      const parsedEvent = JSON.parse(eventStr);
+      console.log('解析后的事件对象结构:', Object.keys(parsedEvent));
+      console.log('queryParameters:', parsedEvent.queryParameters);
+      return parsedEvent;
+    } catch (e) {
+      console.error('解析事件JSON失败:', e.message);
+      return {};
+    }
+  }
+
+  if (typeof event === 'object' && event !== null) {
+    console.log('事件已经是对象格式');
+    return event;
+  }
+
+  console.log('未知的事件格式，返回空对象');
+  return {};
+}
+
+/**
+ * 验证callback参数是否为合法的JavaScript标识符（防止XSS）
+ */
+function isValidCallbackName(callback) {
+  return /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(callback);
+}
+
+/**
+ * 主处理函数
+ */
+export async function handler(event, context) {
+  const baseHeaders = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With'
+  };
+
+  try {
+    console.log('收到原始事件，开始处理...');
+    const parsedEvent = parseBufferEvent(event);
+    const method = parsedEvent.httpMethod || 'GET';
+    const queryParameters = parsedEvent.queryParameters || {};
+    const urlParam = queryParameters.url;
+    const callback = queryParameters.callback;
+
+    console.log('请求方法:', method);
+    console.log('所有查询参数:', JSON.stringify(queryParameters));
+
+    // 处理预检请求
+    if (method === 'OPTIONS') {
+      console.log('处理OPTIONS预检请求');
+      return {
+        statusCode: 204,
+        headers: baseHeaders,
+        body: ''
+      };
     }
 
-    /* ===== 3. 初始化钉钉 JSAPI ===== */
-    log('页面加载完成，开始初始化钉钉配置...');
-    dd.ready(() => {
-      log('钉钉 JSAPI 初始化成功');
-      document.getElementById('scanBtn').addEventListener('click', scanCode);
-    });
-    dd.error(err => log(`JSAPI 异常: ${JSON.stringify(err)}`));
-
-    /* ===== 4. 扫码 → 直发连接流 ===== */
-    async function scanCode() {
-      try {
-        log('调用扫码...');
-        const res = await dd.biz.util.scan({ type: 'qr' });
-        if (!res.text) {
-          log('扫码取消');
-          return;
-        }
-        log(`扫码成功: ${res.text}`);
-
-        /* 组装连接流需要的数据 */
-        const body = {
-          u: await getUserId(),           // 操作人员
-          tm: new Date().toLocaleString('zh-CN', { hourCycle: 'h23' }),  // 扫码日期
-          r: res.text                     // 标签位置（扫码结果）
+    if (method === 'GET') {
+      if (!urlParam) {
+        const errorResponse = {
+          error: '缺少url参数',
+          message: '请确保请求格式为: ?url=您的页面URL',
+          example: `?url=https://cumtlct.github.io/xunshi6/`,
+          receivedParams: queryParameters
         };
 
-        log('提交连接流 Webhook...');
-        const rsp = await fetch(FLOW_HOOK, {
-          method : 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body   : JSON.stringify(body)
-        });
-        const json = await rsp.json();
-
-        if (json.success) {
-          log(`✅ 已写入多维表，recordId: ${json.recordId}`);
-          dd.alert({ title: '成功', content: `扫码内容已入库！\nrecordId: ${json.recordId}` });
+        if (callback && isValidCallbackName(callback)) {
+          return {
+            statusCode: 400,
+            headers: { ...baseHeaders, 'Content-Type': 'application/javascript; charset=utf-8' },
+            body: `${callback}(${JSON.stringify(errorResponse)});`
+          };
         } else {
-          log(`❌ 写入失败: ${JSON.stringify(json)}`);
-          dd.alert({ title: '失败', content: `入库失败\n${JSON.stringify(json)}` });
+          return {
+            statusCode: 400,
+            headers: { ...baseHeaders, 'Content-Type': 'application/json; charset=utf-8' },
+            body: JSON.stringify(errorResponse)
+          };
         }
-      } catch (e) {
-        log(`扫码或提交异常: ${e.message}`);
-        dd.alert({ title: '出错', content: e.message });
       }
+
+      const accessToken = await getAccessToken();
+      const ticket = await getJsApiTicket(accessToken);
+      const nonceStr = Math.random().toString(36).substring(2, 15);
+      const timeStamp = Math.floor(Date.now() / 1000).toString();
+      const signature = generateSignature(ticket, nonceStr, timeStamp, decodeURIComponent(urlParam));
+
+      const responseData = {
+        agentId: AGENT_ID,
+        corpId: CORP_ID,
+        timeStamp: timeStamp,
+        nonceStr: nonceStr,
+        signature: signature
+      };
+
+      if (callback && isValidCallbackName(callback)) {
+        return {
+          statusCode: 200,
+          headers: { ...baseHeaders, 'Content-Type': 'application/javascript; charset=utf-8' },
+          body: `${callback}(${JSON.stringify(responseData)});`
+        };
+      } else {
+        return {
+          statusCode: 200,
+          headers: { ...baseHeaders, 'Content-Type': 'application/json; charset=utf-8' },
+          body: JSON.stringify(responseData)
+        };
+      }
+    } else if (method === 'POST') {
+      let body = parsedEvent.body;
+      if (parsedEvent.isBase64Encoded && body) {
+        body = Buffer.from(body, 'base64').toString();
+      }
+
+      if (!body) {
+        throw new Error('请求体为空');
+      }
+
+      let parsedBody;
+      try {
+        parsedBody = typeof body === 'string' ? JSON.parse(body) : body;
+      } catch (e) {
+        throw new Error('请求体JSON解析失败: ' + e.message);
+      }
+
+      const { tableData } = parsedBody;
+      if (!tableData) {
+        throw new Error('缺少tableData参数');
+      }
+
+      const accessToken = await getAccessToken();
+      const result = await writeToAiSheet(accessToken, tableData);
+
+      return {
+        statusCode: 200,
+        headers: { ...baseHeaders, 'Content-Type': 'application/json; charset=utf-8' },
+        body: JSON.stringify(result)
+      };
+    } else {
+      throw new Error('不支持的请求方法: ' + method);
     }
 
-    /* ===== 5. 拿当前用户 ID ===== */
-    async function getUserId() {
-      return new Promise((resolve) => {
-        dd.runtime.permission.requestAuthCode({
-          corpId: 'ding7e9dde4f5cecba404ac5d6980864d335',          // 替换成你的真实 corpId，也可从 JSAPI 签名接口带回
-          onSuccess: info => {
-            // 这里简化用 authCode 当标识，实际使用时需要进一步解析获取 userId
-            resolve(info.code);
-          },
-          onFail   : err => resolve('unknown')
-        });
-      });
-    }
-  </script>
-</body>
-</html>
+  } catch (err) {
+    console.error('处理请求时发生错误:', err.message);
+    console.error('错误堆栈:', err.stack);
 
+    const errorResponse = {
+      error: err.message,
+      success: false
+    };
+
+    const parsedEvent = parseBufferEvent(event);
+    const method = parsedEvent.httpMethod || 'GET';
+    const queryParameters = parsedEvent.queryParameters || {};
+    const callback = queryParameters.callback;
+
+    if (method === 'GET' && callback && isValidCallbackName(callback)) {
+      return {
+        statusCode: 500,
+        headers: { ...baseHeaders, 'Content-Type': 'application/javascript; charset=utf-8' },
+        body: `${callback}(${JSON.stringify(errorResponse)});`
+      };
+    } else {
+      return {
+        statusCode: 500,
+        headers: { ...baseHeaders, 'Content-Type': 'application/json; charset=utf-8' },
+        body: JSON.stringify(errorResponse)
+      };
+    }
+  }
+}
