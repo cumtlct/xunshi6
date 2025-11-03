@@ -1,104 +1,42 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
+<!doctype html>
+<html>
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AI 表格结构查询</title>
-  <script src="https://g.alicdn.com/dingding/dingtalk-pc-api/2.10.0/index.js"></script>
+  <meta charset="utf-8">
+  <title>AI 表格字段查询</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 20px; background: #f9f9f9; }
-    h2 { color: #1890ff; }
-    button { padding: 12px 24px; font-size: 16px; background: #1890ff; color: white; border: none; border-radius: 4px; cursor: pointer; }
-    button:disabled { background: #bfbfbf; cursor: not-allowed; }
-    #result { margin-top: 20px; }
-    .sheet { background: white; margin: 15px 0; padding: 15px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
-    .sheet h4 { margin-top: 0; color: #333; }
-    .field { padding: 6px 0; font-size: 14px; color: #595959; }
-    .error { color: red; background: #fff2f0; padding: 10px; border-radius: 4px; }
+    body{font-family:PingFang SC,Helvetica;margin:16px;}
+    table{width:100%;border-collapse:collapse;font-size:14px;}
+    th,td{border:1px solid #ddd;padding:6px 8px;text-align:left;}
+    th{background:#f5f5f5;}
   </style>
 </head>
 <body>
-  <h2>🔍 钉钉 AI 表格结构查询</h2>
-  <button id="btnQuery">查询表与字段</button>
-  <div id="result"></div>
+  <h3 id="title">加载中…</h3>
+  <table id="tb">
+    <thead><tr><th>字段ID</th><th>字段名</th><th>类型</th></tr></thead>
+    <tbody></tbody>
+  </table>
 
-  <script>
-    // === 配置你的后端 API 地址 ===
-    const BACKEND_API = "https://get-config-nltlezcizh.cn-hangzhou.fcapp.run"; // 👈 替换为你的函数计算触发器 URL
+<script>
+// 1. 调 FC 触发器
+fetch('https://get-config-nltlezcizh.cn-hangzhou.fcapp.run')
+  .then(r => r.json())
+  .then(render)
+  .catch(console.error);
 
-    // 自动获取当前页面 URL（用于 JSAPI 签名）
-    const currentUrl = encodeURIComponent(location.href.split("#")[0]);
+// 2. 渲染
+function render(data){
+  document.getElementById('title').textContent =
+    `表名称：${data.sheetName}（ID: ${data.sheetId}）`;
 
-    // 初始化钉钉 JSAPI
-    (async () => {
-      try {
-        // 调用后端 /jsapi 接口（使用 fetch + CORS）
-        const res = await fetch(`${BACKEND_API}/jsapi?url=${currentUrl}`);
-        const config = await res.json();
-
-        dd.config({
-          agentId: config.agentId,
-          corpId: config.corpId,
-          timeStamp: config.timeStamp,
-          nonceStr: config.nonceStr,
-          signature: config.signature,
-          jsApiList: ["runtime.info"],
-          onSuccess: () => console.log("DingTalk JSAPI 初始化成功"),
-          onFail: (err) => {
-            console.error("dd.config 失败:", err);
-            alert("JSAPI 初始化失败，请检查后端配置");
-          }
-        });
-      } catch (err) {
-        console.error("JSAPI 初始化异常:", err);
-        alert("无法初始化钉钉 JSAPI，请检查网络或后端服务");
-      }
-    })();
-
-    // 查询按钮
-    document.getElementById("btnQuery").addEventListener("click", async () => {
-      const btn = document.getElementById("btnQuery");
-      const resultDiv = document.getElementById("result");
-      btn.disabled = true;
-      btn.textContent = "查询中...";
-      resultDiv.innerHTML = "";
-
-      try {
-        const res = await fetch(`${BACKEND_API}/list-sheets?_t=${Date.now()}`);
-        const data = await res.json();
-        if (!data.success) throw new Error(data.error || "未知错误");
-
-        if (data.data.length === 0) {
-          resultDiv.innerHTML = '<div class="error">未找到任何数据表</div>';
-          return;
-        }
-
-        let html = "<h3>📊 查询结果：</h3>";
-        data.data.forEach(sheet => {
-          html += `<div class="sheet"><h4>表名称：${escapeHtml(sheet.sheetName)} （ID: ${escapeHtml(sheet.sheetId)}）</h4><div>`;
-          if (sheet.fields.length === 0) {
-            html += '<div class="field">⚠️ 无字段</div>';
-          } else {
-            sheet.fields.forEach(field => {
-              html += `<div class="field">• 字段名："<strong>${escapeHtml(field.name)}</strong>" | 字段ID：${escapeHtml(field.fieldId)} | 类型：${escapeHtml(field.type || "unknown")}</div>`;
-            });
-          }
-          html += "</div></div>";
-        });
-        resultDiv.innerHTML = html;
-      } catch (err) {
-        console.error("查询失败:", err);
-        resultDiv.innerHTML = `<div class="error">❌ 查询失败：${escapeHtml(err.message)}</div>`;
-      } finally {
-        btn.disabled = false;
-        btn.textContent = "查询表与字段";
-      }
-    });
-
-    function escapeHtml(text) {
-      if (typeof text !== "string") return String(text);
-      return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
-    }
-  </script>
+  const tbody = document.querySelector('#tb tbody');
+  data.fields.forEach(f => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${f.fieldId}</td><td>${f.fieldName}</td><td>${f.type}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+</script>
 </body>
 </html>
