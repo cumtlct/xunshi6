@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
-  <title>AI 表格结果2</title>
+  <title>AI 表格结果</title>
   <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=0">
   <style>
     body{font-family:PingFang SC,Helvetica;margin:16px;font-size:14px;background:#f5f5f5}
@@ -19,15 +19,25 @@
     const FC_TRIGGER = 'https://get-config-nltlezcizh.cn-hangzhou.fcapp.run'; // 你的触发器地址
     /* =================================== */
 
-    // 打开即自动查询（零输入）
-    fetch(FC_TRIGGER)
-      .then(r => r.json())
-      .then(data => {
-        document.getElementById('result').textContent = JSON.stringify(data, null, 2);
-      })
-      .catch(e => {
-        document.getElementById('result').textContent = '错误：' + e.message;
-      });
+    // 1. 自动免登 → 拿 code → 调后端
+    (async function () {
+      const url = new URL(location.href);
+      const code = url.searchParams.get('code');
+      if (code) {
+        // 已授权，直接调后端
+        const res = await fetch(FC_TRIGGER + '?code=' + encodeURIComponent(code)).then(r => r.json());
+        document.getElementById('result').textContent = JSON.stringify(res, null, 2);
+      } else {
+        // 第一次：调后端拿免登链接
+        const res = await fetch(FC_TRIGGER).then(r => r.json());
+        if (res.qrLink) {
+          // 自动跳转扫码
+          location.href = res.qrLink;
+        } else {
+          document.getElementById('result').textContent = JSON.stringify(res, null, 2);
+        }
+      }
+    })();
   </script>
-</body>
+</head>
 </html>
