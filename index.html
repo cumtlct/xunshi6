@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
-  <title>AI 表格结果3</title>
+  <title>AI 表格结果4</title>
   <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=0">
   <style>
     body{font-family:PingFang SC,Helvetica;margin:16px;font-size:14px;background:#f5f5f5}
@@ -31,8 +31,7 @@
         // 第一次：调后端拿免登链接
         const res = await fetch(FC_TRIGGER).then(r => r.json());
         if (res.qrLink) {
-          // 自动跳转扫码
-          location.href = res.qrLink;
+          location.href = res.qrLink;   // 自动跳转扫码
         } else {
           document.getElementById('result').textContent = JSON.stringify(res, null, 2);
         }
@@ -41,4 +40,3 @@
   </script>
 </head>
 </html>
-
