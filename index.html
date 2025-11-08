@@ -2,93 +2,32 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
-  <title>AI 表格测试</title>
+  <title>AI 表格结果</title>
   <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=0">
   <style>
     body{font-family:PingFang SC,Helvetica;margin:16px;font-size:14px;background:#f5f5f5}
     h3{margin:0 0 10px}
-    .qr img{width:200px;height:200px;display:block;margin:0 auto}
-    .code{margin-top:10px}
-    input{width:100%;padding:6px;box-sizing:border-box}
-    button{margin-top:10px;width:100%;padding:8px;background:#007bff;color:#fff;border:0;border-radius:4px}
     pre{background:#fff;padding:8px;border-radius:4px;overflow-x:auto}
   </style>
 </head>
 <body>
-  <h3>AI 表格测试</h3>
-  <div id="stage"><p>正在加载...</p></div>
+  <h3>AI 表格结果</h3>
+  <pre id="result">加载中...</pre>
 
   <script>
     /* ========== 配置：只改这里 ========== */
     const FC_TRIGGER = 'https://get-config-nltlezcizh.cn-hangzhou.fcapp.run'; // 你的触发器地址
     /* =================================== */
 
-    const $ = id => document.getElementById(id);
-
-    // 1. 首次进入：调 FC 拿二维码或已带 code 直接换数据
-    async function init() {
-      const url = new URL(location.href);
-      const code = url.searchParams.get('code');
-      if (code) {
-        // 已扫码，直接换数据
-        const res = await fetch(FC_TRIGGER + '?code=' + encodeURIComponent(code)).then(r => r.json());
-        showResult(res);
-      } else {
-        // 未扫码，拿二维码
-        const res = await fetch(FC_TRIGGER).then(r => r.json());
-        if (res.qrLink) {
-          showQr(res.qrLink);
-        } else {
-          showResult(res);
-        }
-      }
-    }
-
-    // 2. 显示二维码
-    async function showQr(link) {
-      const img = await qrCodeUrl(link);
-      $('stage').innerHTML = `
-        <p>请用钉钉扫码</p>
-        <div class="qr"><img src="${img}" /></div>
-        <p class="code">或复制链接到浏览器扫码：<br><input value="${link}" readonly></p>
-        <button onclick="handleCode()">我已扫码，输入 code</button>
-      `;
-    }
-
-    // 3. 生成二维码（无外部库，纯 DOM）
-    async function qrCodeUrl(text) {
-      const qr = await import('https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js');
-      return await qr.toDataURL(text, { width: 200, margin: 1 });
-    }
-
-    // 4. 手动输入 code（扫码后地址栏 code=xxx）
-    async function handleCode() {
-      const code = prompt('请输入地址栏里的 code 值（code=xxx）:', '');
-      if (!code) return;
-      location.href = '?code=' + encodeURIComponent(code); // 刷新页面带 code
-    }
-
-    // 5. 显示结果
-    function showResult(data) {
-      $('stage').innerHTML = '<pre>' + JSON.stringify(data, null, 2) + '</pre>';
-    }
-
-    // 6. 钉钉微应用内自动扫码（可选）
-    if (typeof dd !== 'undefined') {
-      dd.ready(() => {
-        console.log('钉钉 JSAPI 就绪');
-        dd.biz.util.scan({
-          type: 'qrCode',
-          onSuccess: res => {
-            const code = new URL(res.text).searchParams.get('code');
-            if (code) location.href = '?code=' + encodeURIComponent(code);
-          },
-          onFail: err => console.error('扫码失败', err)
-        });
+    // 打开即自动查询（零输入）
+    fetch(FC_TRIGGER)
+      .then(r => r.json())
+      .then(data => {
+        document.getElementById('result').textContent = JSON.stringify(data, null, 2);
+      })
+      .catch(e => {
+        document.getElementById('result').textContent = '错误：' + e.message;
       });
-    } else {
-      init();
-    }
   </script>
 </body>
 </html>
