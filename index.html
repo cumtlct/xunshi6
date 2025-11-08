@@ -1,67 +1,33 @@
-// -*- coding: utf-8 -*-
-const axios = require('axios');
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>AI 表格结果2</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=0">
+  <style>
+    body{font-family:PingFang SC,Helvetica;margin:16px;font-size:14px;background:#f5f5f5}
+    h3{margin:0 0 10px}
+    pre{background:#fff;padding:8px;border-radius:4px;overflow-x:auto}
+  </style>
+</head>
+<body>
+  <h3>AI 表格结果</h3>
+  <pre id="result">加载中...</pre>
 
-exports.handler = async (event, context) => {
-  try {
-    /* 1. 企业 access_token */
-    const tokenRes = await axios.get('https://oapi.dingtalk.com/gettoken', {
-      params: { appkey: process.env.APP_KEY, appsecret: process.env.APP_SECRET },
-      timeout: 10000
-    });
-    const token = tokenRes.data.access_token;
+  <script>
+    /* ========== 配置：只改这里 ========== */
+    const FC_TRIGGER = 'https://get-config-nltlezcizh.cn-hangzhou.fcapp.run'; // 你的触发器地址
+    /* =================================== */
 
-    /* 2. 用企业身份拿「当前企业管理员」userid（零扫码） */
-    // 取企业通讯录前 1 条即可拿到任意 userid
-    const userRes = await axios.get('https://oapi.dingtalk.com/user/get_admin', {
-      params: { access_token: token },
-      timeout: 10000
-    });
-    const userId = userRes.data.adminList[0].userid; // 必有值
-
-    /* 3. 调「获取所有数据表」接口（带真实 operatorId） */
-    const baseId = process.env.BASE_ID;
-    const url  = `https://api.dingtalk.com/v1.0/notable/bases/${baseId}/sheets`;
-    const { data } = await axios.get(url, {
-      params: { operatorId: userId },
-      headers: { 'x-acs-dingtalk-access-token': token },
-      timeout: 10000
-    });
-
-    /* 4. 逐表取字段（并行） */
-    const sheets = await Promise.all((data.sheets || []).map(async sheet => {
-      const fldUrl = `https://api.dingtalk.com/v1.0/notable/bases/${baseId}/sheets/${sheet.sheetId}/fields`;
-      const fldRes = await axios.get(fldUrl, {
-        headers: { 'x-acs-dingtalk-access-token': token },
-        timeout: 10000
-      });
-      return {
-        sheetId: sheet.sheetId,
-        sheetName: sheet.sheetName,
-        index: sheet.index,
-        fields: (fldRes.data.fields || []).map(f => ({
-          fieldId: f.fieldId,
-          fieldName: f.fieldName,
-          type: f.type
-        }))
-      };
-    }));
-
-    /* 5. 返回 */
-    return {
-      statusCode: 200,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        baseId: baseId,
-        baseName: process.env.BASE_NAME || '',
-        sheets: sheets
+    // 打开即自动查询（零输入）
+    fetch(FC_TRIGGER)
+      .then(r => r.json())
+      .then(data => {
+        document.getElementById('result').textContent = JSON.stringify(data, null, 2);
       })
-    };
-  } catch (e) {
-    console.error('api error:', e.message, e.response?.data);
-    return {
-      statusCode: e.response?.status || 500,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ error: e.message })
-    };
-  }
-};
+      .catch(e => {
+        document.getElementById('result').textContent = '错误：' + e.message;
+      });
+  </script>
+</body>
+</html>
